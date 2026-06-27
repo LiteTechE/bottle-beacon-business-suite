@@ -265,12 +265,6 @@ export async function handleCustomerMessage(text: string, chatId: number, user: 
     const applied = Math.min(amount, bal);
     const newBal = +(bal - applied).toFixed(2);
     await db.from("customers").update({ outstanding_balance: newBal }).eq("id", id);
-    await db.from("payments").insert({
-      sale_id: null,
-      method: "credit_repayment",
-      amount: applied,
-      reference: `CUST:${c.id}`,
-    });
     await logActivity({
       user_id: user.id,
       telegram_id: user.telegram_id,
