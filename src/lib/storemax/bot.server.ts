@@ -171,6 +171,68 @@ async function handleMessage(msg: { message_id: number; chat: { id: number }; fr
     return;
   }
 
+  if (text === "/resetpin" || text.startsWith("/resetpin ") || text.startsWith("/resetpin@")) {
+    if (user.role !== "owner") {
+      await sendMessage(chatId, "⛔ Only the owner can reset PINs.");
+      return;
+    }
+    const parts = text.split(/\s+/);
+    const target = parts[1];
+    if (!target) {
+      await sendMessage(
+        chatId,
+        "🔑 <b>Reset PIN</b>\n\nUsage: <code>/resetpin &lt;telegram_id&gt;</code> or <code>/resetpin @username</code>",
+      );
+      return;
+    }
+    const db = getServiceClient();
+    let query = db.from("bot_users").select("*");
+    if (target.startsWith("@")) {
+      query = query.eq("username", target.slice(1));
+    } else if (/^\d+$/.test(target)) {
+      query = query.eq("telegram_id", Number(target));
+    } else {
+      query = query.eq("username", target);
+    }
+    const { data: targetUser } = await query.maybeSingle();
+    if (!targetUser) {
+      await sendMessage(chatId, `❌ No user found matching <code>${escapeHtml(target)}</code>.`);
+      return;
+    }
+    if (targetUser.id === user.id) {
+      await sendMessage(chatId, "⚠️ Use a different method to reset your own PIN.");
+      return;
+    }
+    await db
+      .from("bot_users")
+      .update({
+        pin_hash: null,
+        failed_login_count: 0,
+        locked_until: null,
+      })
+      .eq("id", targetUser.id);
+    await clearSession(targetUser.telegram_id);
+    await logActivity({
+      user_id: user.id,
+      telegram_id: tg.id,
+      action: "pin_reset",
+      meta: { target_user_id: targetUser.id, target_telegram_id: targetUser.telegram_id },
+    });
+    await sendMessage(
+      chatId,
+      `✅ PIN reset for <b>${escapeHtml(targetUser.full_name)}</b>. They will be asked to set a new PIN on next /start.`,
+    );
+    try {
+      await sendMessage(
+        targetUser.telegram_id,
+        "🔐 Your PIN has been reset by the owner. Send /start to set a new PIN.",
+      );
+    } catch {
+      // target may not have an open chat; ignore
+    }
+    return;
+  }
+
   // Session-driven flows
   const session = await loadSession(tg.id);
   const state = session?.state;
