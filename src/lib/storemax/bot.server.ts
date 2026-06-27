@@ -306,6 +306,8 @@ async function handleMessage(msg: { message_id: number; chat: { id: number }; fr
   const botUser = { id: user.id, telegram_id: tg.id, role: user.role, full_name: user.full_name };
   if (await handleSaleMessage(text, chatId, botUser)) return;
   if (await handleInventoryMessage(text, chatId, botUser)) return;
+  if (await handleCustomerMessage(text, chatId, botUser)) return;
+  if (await handleSupplierMessage(text, chatId, botUser)) return;
 
   await sendMessage(chatId, "Use the menu below.", { reply_markup: mainMenu(user.role) });
 }
