@@ -10,6 +10,8 @@ import {
   handleInventoryMessage,
 } from "./inventory.server";
 import { openSale, handleSaleCallback, handleSaleMessage } from "./sales.server";
+import { openCustomers, handleCustomerCallback, handleCustomerMessage } from "./customers.server";
+import { openSuppliers, handleSupplierCallback, handleSupplierMessage } from "./suppliers.server";
 
 interface TgUser {
   id: number;
