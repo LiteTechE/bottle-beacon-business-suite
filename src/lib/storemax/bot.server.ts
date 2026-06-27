@@ -352,6 +352,14 @@ async function handleCallback(cb: TgCallback) {
     await answerCallbackQuery(cb.id);
     return;
   }
+  if (await handleCustomerCallback(data, chatId, botUser)) {
+    await answerCallbackQuery(cb.id);
+    return;
+  }
+  if (await handleSupplierCallback(data, chatId, botUser)) {
+    await answerCallbackQuery(cb.id);
+    return;
+  }
 
   if (data === "menu:main") {
     await answerCallbackQuery(cb.id);
@@ -366,6 +374,16 @@ async function handleCallback(cb: TgCallback) {
   if (data === "menu:inventory") {
     await answerCallbackQuery(cb.id);
     await openInventory(chatId, botUser);
+    return;
+  }
+  if (data === "menu:customers") {
+    await answerCallbackQuery(cb.id);
+    await openCustomers(chatId, botUser);
+    return;
+  }
+  if (data === "menu:suppliers") {
+    await answerCallbackQuery(cb.id);
+    await openSuppliers(chatId, botUser);
     return;
   }
 
