@@ -150,9 +150,12 @@ async function handleMessage(msg: { message_id: number; chat: { id: number }; fr
   }
 
   if (text === "/help") {
+    const ownerExtra = user.role === "owner"
+      ? "\n• /resetpin &lt;telegram_id|@username&gt; — reset another user's PIN"
+      : "";
     await sendMessage(
       chatId,
-      `<b>STOREMAX POS — Help</b>\n\n• /start — log in or set up\n• /logout — end your session\n• /whoami — show your account\n\nAfter logging in, use the menu buttons.`,
+      `<b>STOREMAX POS — Help</b>\n\n• /start — log in or set up\n• /logout — end your session\n• /whoami — show your account${ownerExtra}\n\nAfter logging in, use the menu buttons.`,
     );
     return;
   }
