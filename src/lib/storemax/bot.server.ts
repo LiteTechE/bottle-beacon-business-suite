@@ -4,6 +4,12 @@ import { sendMessage, answerCallbackQuery, type ReplyMarkup } from "./telegram.s
 import { loadSession, saveSession, clearSession } from "./session.server";
 import { logActivity } from "./logger.server";
 import { notifyOwner } from "./notify.server";
+import {
+  openInventory,
+  handleInventoryCallback,
+  handleInventoryMessage,
+} from "./inventory.server";
+import { openSale, handleSaleCallback, handleSaleMessage } from "./sales.server";
 
 interface TgUser {
   id: number;
