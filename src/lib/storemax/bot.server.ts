@@ -272,11 +272,39 @@ async function handleCallback(cb: TgCallback) {
     return;
   }
 
+  const botUser = { id: user.id, telegram_id: tg.id, role: user.role, full_name: user.full_name };
+
+  // Module callback routing
+  if (await handleSaleCallback(data, chatId, botUser)) {
+    await answerCallbackQuery(cb.id);
+    return;
+  }
+  if (await handleInventoryCallback(data, chatId, botUser)) {
+    await answerCallbackQuery(cb.id);
+    return;
+  }
+
+  if (data === "menu:main") {
+    await answerCallbackQuery(cb.id);
+    await sendMessage(chatId, mainMenuTitle(user), { reply_markup: mainMenu(user.role) });
+    return;
+  }
+  if (data === "menu:sale") {
+    await answerCallbackQuery(cb.id);
+    await openSale(chatId, botUser);
+    return;
+  }
+  if (data === "menu:inventory") {
+    await answerCallbackQuery(cb.id);
+    await openInventory(chatId, botUser);
+    return;
+  }
+
   if (data.startsWith("menu:")) {
     await answerCallbackQuery(cb.id);
     await sendMessage(
       chatId,
-      `🚧 <b>${data.slice(5).toUpperCase()}</b> module is coming soon.\n\nThe foundation is in place; this feature ships in the next module.`,
+      `🚧 <b>${data.slice(5).toUpperCase()}</b> module is coming soon.`,
       { reply_markup: mainMenu(user.role) },
     );
     return;
