@@ -1,7 +1,7 @@
 // PIN hashing using PBKDF2-SHA256 via Web Crypto (works on Cloudflare Workers).
 // Format: pbkdf2$<iterations>$<saltB64>$<hashB64>
 
-const ITERATIONS = 120_000;
+const ITERATIONS = 100_000;
 const KEY_LEN = 32;
 const enc = new TextEncoder();
 
