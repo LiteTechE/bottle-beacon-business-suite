@@ -10,6 +10,8 @@ import {
   handleInventoryMessage,
 } from "./inventory.server";
 import { openSale, handleSaleCallback, handleSaleMessage } from "./sales.server";
+import { openCustomers, handleCustomerCallback, handleCustomerMessage } from "./customers.server";
+import { openSuppliers, handleSupplierCallback, handleSupplierMessage } from "./suppliers.server";
 
 interface TgUser {
   id: number;
@@ -304,6 +306,8 @@ async function handleMessage(msg: { message_id: number; chat: { id: number }; fr
   const botUser = { id: user.id, telegram_id: tg.id, role: user.role, full_name: user.full_name };
   if (await handleSaleMessage(text, chatId, botUser)) return;
   if (await handleInventoryMessage(text, chatId, botUser)) return;
+  if (await handleCustomerMessage(text, chatId, botUser)) return;
+  if (await handleSupplierMessage(text, chatId, botUser)) return;
 
   await sendMessage(chatId, "Use the menu below.", { reply_markup: mainMenu(user.role) });
 }
@@ -348,6 +352,14 @@ async function handleCallback(cb: TgCallback) {
     await answerCallbackQuery(cb.id);
     return;
   }
+  if (await handleCustomerCallback(data, chatId, botUser)) {
+    await answerCallbackQuery(cb.id);
+    return;
+  }
+  if (await handleSupplierCallback(data, chatId, botUser)) {
+    await answerCallbackQuery(cb.id);
+    return;
+  }
 
   if (data === "menu:main") {
     await answerCallbackQuery(cb.id);
@@ -362,6 +374,16 @@ async function handleCallback(cb: TgCallback) {
   if (data === "menu:inventory") {
     await answerCallbackQuery(cb.id);
     await openInventory(chatId, botUser);
+    return;
+  }
+  if (data === "menu:customers") {
+    await answerCallbackQuery(cb.id);
+    await openCustomers(chatId, botUser);
+    return;
+  }
+  if (data === "menu:suppliers") {
+    await answerCallbackQuery(cb.id);
+    await openSuppliers(chatId, botUser);
     return;
   }
 
