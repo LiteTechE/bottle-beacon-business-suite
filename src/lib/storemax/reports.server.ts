@@ -93,12 +93,13 @@ async function topProducts(chatId: number) {
   }
   const { data: items } = await db
     .from("sale_items")
-    .select("product_id,product_name,quantity,line_total")
+    .select("product_id,quantity,line_total,products(name)")
     .in("sale_id", ids);
   const map = new Map<string, { name: string; qty: number; revenue: number }>();
   for (const it of items ?? []) {
-    const key = String((it as any).product_id ?? (it as any).product_name);
-    const entry = map.get(key) ?? { name: (it as any).product_name, qty: 0, revenue: 0 };
+    const key = String((it as any).product_id);
+    const name = (it as any).products?.name ?? "Unknown";
+    const entry = map.get(key) ?? { name, qty: 0, revenue: 0 };
     entry.qty += Number((it as any).quantity);
     entry.revenue += Number((it as any).line_total);
     map.set(key, entry);

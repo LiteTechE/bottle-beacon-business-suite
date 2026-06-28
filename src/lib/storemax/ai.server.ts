@@ -29,7 +29,7 @@ async function gatherContext(): Promise<string> {
     db.from("sales").select("total").gte("created_at", monthStart.toISOString()),
     db.from("products").select("name,current_stock,min_stock_level").lte("current_stock", 5).eq("archived", false).limit(20),
     db.from("customers").select("name,outstanding_balance").gt("outstanding_balance", 0).order("outstanding_balance", { ascending: false }).limit(10),
-    db.from("sale_items").select("product_name,quantity,line_total").limit(500),
+    db.from("sale_items").select("quantity,line_total,products(name)").limit(500),
     db.from("expenses").select("category,amount").gte("created_at", monthStart.toISOString()),
   ]);
 
@@ -39,7 +39,7 @@ async function gatherContext(): Promise<string> {
 
   const productMap = new Map<string, { qty: number; revenue: number }>();
   for (const it of topProductsRaw ?? []) {
-    const key = (it as any).product_name as string;
+    const key = (it as any).products?.name ?? "Unknown";
     const e = productMap.get(key) ?? { qty: 0, revenue: 0 };
     e.qty += Number((it as any).quantity);
     e.revenue += Number((it as any).line_total);
