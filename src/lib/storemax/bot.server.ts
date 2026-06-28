@@ -12,6 +12,10 @@ import {
 import { openSale, handleSaleCallback, handleSaleMessage } from "./sales.server";
 import { openCustomers, handleCustomerCallback, handleCustomerMessage } from "./customers.server";
 import { openSuppliers, handleSupplierCallback, handleSupplierMessage } from "./suppliers.server";
+import { openStaff, handleStaffCallback, handleStaffMessage } from "./staff.server";
+import { openExpenses, handleExpenseCallback, handleExpenseMessage } from "./expenses.server";
+import { openReports, handleReportsCallback, mySalesToday } from "./reports.server";
+import { openAI, handleAIMessage } from "./ai.server";
 
 interface TgUser {
   id: number;
@@ -308,6 +312,9 @@ async function handleMessage(msg: { message_id: number; chat: { id: number }; fr
   if (await handleInventoryMessage(text, chatId, botUser)) return;
   if (await handleCustomerMessage(text, chatId, botUser)) return;
   if (await handleSupplierMessage(text, chatId, botUser)) return;
+  if (await handleStaffMessage(text, chatId, botUser)) return;
+  if (await handleExpenseMessage(text, chatId, botUser)) return;
+  if (await handleAIMessage(text, chatId, botUser)) return;
 
   await sendMessage(chatId, "Use the menu below.", { reply_markup: mainMenu(user.role) });
 }
@@ -361,6 +368,19 @@ async function handleCallback(cb: TgCallback) {
     return;
   }
 
+  if (await handleStaffCallback(data, chatId, botUser)) {
+    await answerCallbackQuery(cb.id);
+    return;
+  }
+  if (await handleExpenseCallback(data, chatId, botUser)) {
+    await answerCallbackQuery(cb.id);
+    return;
+  }
+  if (await handleReportsCallback(data, chatId, botUser)) {
+    await answerCallbackQuery(cb.id);
+    return;
+  }
+
   if (data === "menu:main") {
     await answerCallbackQuery(cb.id);
     await sendMessage(chatId, mainMenuTitle(user), { reply_markup: mainMenu(user.role) });
@@ -384,6 +404,36 @@ async function handleCallback(cb: TgCallback) {
   if (data === "menu:suppliers") {
     await answerCallbackQuery(cb.id);
     await openSuppliers(chatId, botUser);
+    return;
+  }
+  if (data === "menu:staff") {
+    await answerCallbackQuery(cb.id);
+    await openStaff(chatId, botUser);
+    return;
+  }
+  if (data === "menu:expenses") {
+    await answerCallbackQuery(cb.id);
+    await openExpenses(chatId, botUser);
+    return;
+  }
+  if (data === "menu:reports") {
+    await answerCallbackQuery(cb.id);
+    await openReports(chatId, botUser);
+    return;
+  }
+  if (data === "menu:ai") {
+    await answerCallbackQuery(cb.id);
+    await openAI(chatId, botUser);
+    return;
+  }
+  if (data === "menu:mysales") {
+    await answerCallbackQuery(cb.id);
+    await mySalesToday(chatId, botUser);
+    return;
+  }
+  if (data === "menu:search") {
+    await answerCallbackQuery(cb.id);
+    await openSale(chatId, botUser);
     return;
   }
 
