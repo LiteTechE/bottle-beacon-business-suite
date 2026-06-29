@@ -154,6 +154,26 @@ export async function handleReportsCallback(data: string, chatId: number, user: 
     await profitAndLoss(chatId);
     return true;
   }
+  if (data.startsWith("rpt:pdf:")) {
+    const kind = data.slice("rpt:pdf:".length);
+    await sendMessage(chatId, "📄 Generating PDF…");
+    try {
+      if (kind === "daily") {
+        const { url, filename } = await buildDailySummaryPdf();
+        await sendDocument(chatId, url, { caption: `📅 <b>Daily Summary</b>\n${filename}`, reply_markup: reportsMenu() });
+      } else {
+        let since: Date; let label: string;
+        if (kind === "today") { since = new Date(); since.setHours(0, 0, 0, 0); label = "Today"; }
+        else if (kind === "week") { since = new Date(Date.now() - 7 * 86400_000); label = "Last 7 Days"; }
+        else { since = new Date(); since.setDate(1); since.setHours(0, 0, 0, 0); label = "This Month"; }
+        const { url, filename } = await buildSalesReportPdf({ sinceIso: since.toISOString(), label });
+        await sendDocument(chatId, url, { caption: `📊 <b>Sales Report — ${label}</b>\n${filename}`, reply_markup: reportsMenu() });
+      }
+    } catch (err: any) {
+      await sendMessage(chatId, `❌ PDF failed: ${escapeHtml(err.message ?? String(err))}`, { reply_markup: reportsMenu() });
+    }
+    return true;
+  }
   return false;
 }
 
