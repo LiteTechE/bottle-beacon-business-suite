@@ -1,5 +1,6 @@
 import { getServiceClient } from "./db.server";
-import { sendMessage, type ReplyMarkup } from "./telegram.server";
+import { sendMessage, sendDocument, type ReplyMarkup } from "./telegram.server";
+import { buildSalesReportPdf, buildDailySummaryPdf } from "./pdf.server";
 
 interface BotUser {
   id: string;
