@@ -160,7 +160,7 @@ async function handleMessage(msg: { message_id: number; chat: { id: number }; fr
 
   if (text === "/help") {
     const ownerExtra = user.role === "owner"
-      ? "\n• /resetpin &lt;telegram_id|@username&gt; — reset another user's PIN"
+      ? "\n• /resetpin &lt;telegram_id|@username&gt; — reset another user's PIN\n• /dailysummary — generate today's summary PDF"
       : "";
     await sendMessage(
       chatId,
