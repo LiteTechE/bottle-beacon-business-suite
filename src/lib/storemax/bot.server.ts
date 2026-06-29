@@ -16,6 +16,9 @@ import { openStaff, handleStaffCallback, handleStaffMessage } from "./staff.serv
 import { openExpenses, handleExpenseCallback, handleExpenseMessage } from "./expenses.server";
 import { openReports, handleReportsCallback, mySalesToday } from "./reports.server";
 import { openAI, handleAIMessage } from "./ai.server";
+import { openSettings, handleSettingsCallback, handleSettingsMessage } from "./settings.server";
+import { buildDailySummaryPdf } from "./pdf.server";
+import { sendDocument } from "./telegram.server";
 
 interface TgUser {
   id: number;
