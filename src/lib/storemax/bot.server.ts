@@ -317,6 +317,7 @@ async function handleMessage(msg: { message_id: number; chat: { id: number }; fr
   if (await handleSupplierMessage(text, chatId, botUser)) return;
   if (await handleStaffMessage(text, chatId, botUser)) return;
   if (await handleExpenseMessage(text, chatId, botUser)) return;
+  if (await handleSettingsMessage(text, chatId, botUser)) return;
   if (await handleAIMessage(text, chatId, botUser)) return;
 
   await sendMessage(chatId, "Use the menu below.", { reply_markup: mainMenu(user.role) });
