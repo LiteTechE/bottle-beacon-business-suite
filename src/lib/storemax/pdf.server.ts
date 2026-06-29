@@ -1,6 +1,6 @@
 // PDF generation + upload to Supabase Storage, returning a signed URL
 // suitable for Telegram sendDocument.
-import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
+import type { PDFFont, PDFPage } from "pdf-lib";
 import { getServiceClient } from "./db.server";
 import { getSettings } from "./settings.server";
 
@@ -22,6 +22,7 @@ const PAGE_H = 842;
 const MARGIN = 40;
 
 async function renderPdf(doc: PdfDoc): Promise<Uint8Array> {
+  const { PDFDocument, StandardFonts, rgb } = await import("pdf-lib");
   const pdf = await PDFDocument.create();
   const font = await pdf.embedFont(StandardFonts.Helvetica);
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
