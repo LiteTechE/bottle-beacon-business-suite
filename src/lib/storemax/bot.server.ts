@@ -384,6 +384,15 @@ async function handleCallback(cb: TgCallback) {
     await answerCallbackQuery(cb.id);
     return;
   }
+  if (await handleSettingsCallback(data, chatId, botUser)) {
+    await answerCallbackQuery(cb.id);
+    return;
+  }
+  if (data === "menu:settings") {
+    await answerCallbackQuery(cb.id);
+    await openSettings(chatId, botUser);
+    return;
+  }
 
   if (data === "menu:main") {
     await answerCallbackQuery(cb.id);
