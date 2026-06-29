@@ -28,6 +28,9 @@ export function reportsMenu(): ReplyMarkup {
       [{ text: "📆 This Month", callback_data: "rpt:month" }],
       [{ text: "🏆 Top Products (30d)", callback_data: "rpt:top" }],
       [{ text: "📈 Profit & Loss (30d)", callback_data: "rpt:pl" }],
+      [{ text: "📄 Daily Summary PDF", callback_data: "rpt:pdf:daily" }],
+      [{ text: "📄 PDF: Today", callback_data: "rpt:pdf:today" }, { text: "📄 PDF: Week", callback_data: "rpt:pdf:week" }],
+      [{ text: "📄 PDF: Month", callback_data: "rpt:pdf:month" }],
       [{ text: "⬅️ Back", callback_data: "menu:main" }],
     ],
   };
