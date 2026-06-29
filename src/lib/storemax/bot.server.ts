@@ -16,6 +16,9 @@ import { openStaff, handleStaffCallback, handleStaffMessage } from "./staff.serv
 import { openExpenses, handleExpenseCallback, handleExpenseMessage } from "./expenses.server";
 import { openReports, handleReportsCallback, mySalesToday } from "./reports.server";
 import { openAI, handleAIMessage } from "./ai.server";
+import { openSettings, handleSettingsCallback, handleSettingsMessage } from "./settings.server";
+import { buildDailySummaryPdf } from "./pdf.server";
+import { sendDocument } from "./telegram.server";
 
 interface TgUser {
   id: number;
@@ -157,7 +160,7 @@ async function handleMessage(msg: { message_id: number; chat: { id: number }; fr
 
   if (text === "/help") {
     const ownerExtra = user.role === "owner"
-      ? "\n• /resetpin &lt;telegram_id|@username&gt; — reset another user's PIN"
+      ? "\n• /resetpin &lt;telegram_id|@username&gt; — reset another user's PIN\n• /dailysummary — generate today's summary PDF"
       : "";
     await sendMessage(
       chatId,
@@ -177,6 +180,21 @@ async function handleMessage(msg: { message_id: number; chat: { id: number }; fr
   if (text === "/logout") {
     await clearSession(tg.id);
     await sendMessage(chatId, "🔒 Logged out. Send /start to log in again.");
+    return;
+  }
+
+  if (text === "/dailysummary") {
+    if (user.role !== "owner") {
+      await sendMessage(chatId, "⛔ Only the owner can run this command.");
+      return;
+    }
+    await sendMessage(chatId, "📄 Generating daily summary PDF…");
+    try {
+      const { url, filename } = await buildDailySummaryPdf();
+      await sendDocument(chatId, url, { caption: `📅 <b>Daily Summary</b>\n${filename}` });
+    } catch (err: any) {
+      await sendMessage(chatId, `❌ Failed: ${escapeHtml(err.message ?? String(err))}`);
+    }
     return;
   }
 
@@ -314,6 +332,7 @@ async function handleMessage(msg: { message_id: number; chat: { id: number }; fr
   if (await handleSupplierMessage(text, chatId, botUser)) return;
   if (await handleStaffMessage(text, chatId, botUser)) return;
   if (await handleExpenseMessage(text, chatId, botUser)) return;
+  if (await handleSettingsMessage(text, chatId, botUser)) return;
   if (await handleAIMessage(text, chatId, botUser)) return;
 
   await sendMessage(chatId, "Use the menu below.", { reply_markup: mainMenu(user.role) });
@@ -378,6 +397,15 @@ async function handleCallback(cb: TgCallback) {
   }
   if (await handleReportsCallback(data, chatId, botUser)) {
     await answerCallbackQuery(cb.id);
+    return;
+  }
+  if (await handleSettingsCallback(data, chatId, botUser)) {
+    await answerCallbackQuery(cb.id);
+    return;
+  }
+  if (data === "menu:settings") {
+    await answerCallbackQuery(cb.id);
+    await openSettings(chatId, botUser);
     return;
   }
 

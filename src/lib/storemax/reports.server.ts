@@ -1,5 +1,6 @@
 import { getServiceClient } from "./db.server";
-import { sendMessage, type ReplyMarkup } from "./telegram.server";
+import { sendMessage, sendDocument, type ReplyMarkup } from "./telegram.server";
+import { buildSalesReportPdf, buildDailySummaryPdf } from "./pdf.server";
 
 interface BotUser {
   id: string;
@@ -27,6 +28,9 @@ export function reportsMenu(): ReplyMarkup {
       [{ text: "📆 This Month", callback_data: "rpt:month" }],
       [{ text: "🏆 Top Products (30d)", callback_data: "rpt:top" }],
       [{ text: "📈 Profit & Loss (30d)", callback_data: "rpt:pl" }],
+      [{ text: "📄 Daily Summary PDF", callback_data: "rpt:pdf:daily" }],
+      [{ text: "📄 PDF: Today", callback_data: "rpt:pdf:today" }, { text: "📄 PDF: Week", callback_data: "rpt:pdf:week" }],
+      [{ text: "📄 PDF: Month", callback_data: "rpt:pdf:month" }],
       [{ text: "⬅️ Back", callback_data: "menu:main" }],
     ],
   };
@@ -148,6 +152,26 @@ export async function handleReportsCallback(data: string, chatId: number, user: 
   }
   if (data === "rpt:pl") {
     await profitAndLoss(chatId);
+    return true;
+  }
+  if (data.startsWith("rpt:pdf:")) {
+    const kind = data.slice("rpt:pdf:".length);
+    await sendMessage(chatId, "📄 Generating PDF…");
+    try {
+      if (kind === "daily") {
+        const { url, filename } = await buildDailySummaryPdf();
+        await sendDocument(chatId, url, { caption: `📅 <b>Daily Summary</b>\n${filename}`, reply_markup: reportsMenu() });
+      } else {
+        let since: Date; let label: string;
+        if (kind === "today") { since = new Date(); since.setHours(0, 0, 0, 0); label = "Today"; }
+        else if (kind === "week") { since = new Date(Date.now() - 7 * 86400_000); label = "Last 7 Days"; }
+        else { since = new Date(); since.setDate(1); since.setHours(0, 0, 0, 0); label = "This Month"; }
+        const { url, filename } = await buildSalesReportPdf({ sinceIso: since.toISOString(), label });
+        await sendDocument(chatId, url, { caption: `📊 <b>Sales Report — ${label}</b>\n${filename}`, reply_markup: reportsMenu() });
+      }
+    } catch (err: any) {
+      await sendMessage(chatId, `❌ PDF failed: ${escapeHtml(err.message ?? String(err))}`, { reply_markup: reportsMenu() });
+    }
     return true;
   }
   return false;

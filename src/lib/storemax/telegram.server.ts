@@ -43,6 +43,20 @@ export async function sendMessage(
   });
 }
 
+export async function sendDocument(
+  chatId: number,
+  documentUrl: string,
+  opts: { caption?: string; reply_markup?: ReplyMarkup; filename?: string } = {},
+) {
+  return tgCall("sendDocument", {
+    chat_id: chatId,
+    document: documentUrl,
+    caption: opts.caption,
+    parse_mode: "HTML",
+    reply_markup: opts.reply_markup,
+  });
+}
+
 export async function editMessageText(
   chatId: number,
   messageId: number,
