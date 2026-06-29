@@ -279,7 +279,7 @@ export async function buildDailySummaryPdf(dayIso?: string): Promise<{ url: stri
   const { data: lowStock } = await db
     .from("products")
     .select("name,stock,min_stock_level")
-    .lte("stock", db.rpc ? 100000 : 100000); // fetch and filter below
+    .lte("stock", 100000); // fetch and filter below
   const low = (lowStock ?? []).filter((p: any) => Number(p.stock) <= Number(p.min_stock_level ?? 0));
 
   const { data: debtors } = await db
