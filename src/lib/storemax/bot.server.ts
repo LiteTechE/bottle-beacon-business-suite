@@ -183,6 +183,21 @@ async function handleMessage(msg: { message_id: number; chat: { id: number }; fr
     return;
   }
 
+  if (text === "/dailysummary") {
+    if (user.role !== "owner") {
+      await sendMessage(chatId, "⛔ Only the owner can run this command.");
+      return;
+    }
+    await sendMessage(chatId, "📄 Generating daily summary PDF…");
+    try {
+      const { url, filename } = await buildDailySummaryPdf();
+      await sendDocument(chatId, url, { caption: `📅 <b>Daily Summary</b>\n${filename}` });
+    } catch (err: any) {
+      await sendMessage(chatId, `❌ Failed: ${escapeHtml(err.message ?? String(err))}`);
+    }
+    return;
+  }
+
   if (text === "/resetpin" || text.startsWith("/resetpin ") || text.startsWith("/resetpin@")) {
     if (user.role !== "owner") {
       await sendMessage(chatId, "⛔ Only the owner can reset PINs.");
