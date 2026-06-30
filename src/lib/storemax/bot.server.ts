@@ -67,7 +67,7 @@ function mainMenu(role: "owner" | "sales_rep"): ReplyMarkup {
   return {
     inline_keyboard: [
       [{ text: "🛒 New Sale", callback_data: "menu:sale" }, { text: "🔎 Search Product", callback_data: "menu:search" }],
-      [{ text: "📋 My Sales Today", callback_data: "menu:mysales" }, { text: "👥 Customers", callback_data: "menu:customers" }],
+      [{ text: "📋 My Performance", callback_data: "menu:mysales" }, { text: "👥 Customers", callback_data: "menu:customers" }],
       [{ text: "🔒 Logout", callback_data: "auth:logout" }],
     ],
   };
