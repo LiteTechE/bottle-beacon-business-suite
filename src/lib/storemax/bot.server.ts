@@ -14,7 +14,7 @@ import { openCustomers, handleCustomerCallback, handleCustomerMessage } from "./
 import { openSuppliers, handleSupplierCallback, handleSupplierMessage } from "./suppliers.server";
 import { openStaff, handleStaffCallback, handleStaffMessage } from "./staff.server";
 import { openExpenses, handleExpenseCallback, handleExpenseMessage } from "./expenses.server";
-import { openReports, handleReportsCallback, mySalesToday } from "./reports.server";
+import { openReports, handleReportsCallback, openMyPerformance } from "./reports.server";
 import { openAI, handleAIMessage } from "./ai.server";
 import { openSettings, handleSettingsCallback, handleSettingsMessage } from "./settings.server";
 import { buildDailySummaryPdf } from "./pdf.server";
@@ -67,7 +67,7 @@ function mainMenu(role: "owner" | "sales_rep"): ReplyMarkup {
   return {
     inline_keyboard: [
       [{ text: "🛒 New Sale", callback_data: "menu:sale" }, { text: "🔎 Search Product", callback_data: "menu:search" }],
-      [{ text: "📋 My Sales Today", callback_data: "menu:mysales" }, { text: "👥 Customers", callback_data: "menu:customers" }],
+      [{ text: "📋 My Performance", callback_data: "menu:mysales" }, { text: "👥 Customers", callback_data: "menu:customers" }],
       [{ text: "🔒 Logout", callback_data: "auth:logout" }],
     ],
   };
@@ -135,14 +135,30 @@ async function handleMessage(msg: { message_id: number; chat: { id: number }; fr
     if (!user.is_active) {
       await sendMessage(
         chatId,
-        `👋 Welcome <b>${escapeHtml(user.full_name)}</b>.\n\nYour account is pending approval by the owner.`,
+        `👋 Welcome <b>${escapeHtml(user.full_name)}</b>.\n\nYour account is pending approval by the owner. You'll be notified once approved.`,
       );
-      await notifyOwner(
-        "system",
-        "New sales rep awaiting approval",
-        `${user.full_name} (Telegram ID ${tg.id}) just opened the bot. Activate them from ⚙️ Settings → Staff.`,
-        { telegram_id: tg.id, user_id: user.id },
-      );
+      // Send owner a one-tap approve button
+      const { getOwnerTelegramId } = await import("./notify.server");
+      const ownerId = await getOwnerTelegramId();
+      if (ownerId) {
+        try {
+          await sendMessage(
+            ownerId,
+            `🆕 <b>New staff awaiting approval</b>\n\n` +
+              `Name: <b>${escapeHtml(user.full_name)}</b>\n` +
+              `Username: @${escapeHtml(user.username ?? "—")}\n` +
+              `Telegram ID: <code>${tg.id}</code>`,
+            {
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: "✅ Approve", callback_data: `staff:act:${user.id}` }],
+                  [{ text: "👤 View Profile", callback_data: `staff:view:${user.id}` }],
+                ],
+              },
+            },
+          );
+        } catch {}
+      }
       return;
     }
     if (!user.pin_hash) {
@@ -456,7 +472,7 @@ async function handleCallback(cb: TgCallback) {
   }
   if (data === "menu:mysales") {
     await answerCallbackQuery(cb.id);
-    await mySalesToday(chatId, botUser);
+    await openMyPerformance(chatId, botUser);
     return;
   }
   if (data === "menu:search") {
