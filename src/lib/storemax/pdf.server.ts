@@ -171,7 +171,7 @@ export async function buildSalesReportPdf(opts: PeriodPdfOptions): Promise<{ url
     .lte("created_at", until);
 
   const gross = rows.reduce((s: number, x: any) => s + Number(x.total), 0);
-  const credit = rows.filter((x: any) => x.payment_status === "credit").reduce((s: number, x: any) => s + Number(x.total), 0);
+  const credit = rows.filter((x: any) => methodOf(x) === "credit").reduce((s: number, x: any) => s + Number(x.total), 0);
   const expTotal = (expenses ?? []).reduce((s: number, e: any) => s + Number(e.amount), 0);
   const profit = gross - cogs - expTotal;
 
