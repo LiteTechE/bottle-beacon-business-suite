@@ -21,16 +21,40 @@ function fmtMoney(n: number | string | null | undefined): string {
   return v.toLocaleString("en-NG", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+// ---------- Period boundaries ----------
+type Period = "today" | "week" | "month" | "year";
+
+function periodRange(p: Period): { since: Date; label: string } {
+  const now = new Date();
+  if (p === "today") {
+    const d = new Date(now); d.setHours(0, 0, 0, 0);
+    return { since: d, label: "Today" };
+  }
+  if (p === "week") {
+    // Start of this week (Mon)
+    const d = new Date(now); d.setHours(0, 0, 0, 0);
+    const day = (d.getDay() + 6) % 7; // Mon=0
+    d.setDate(d.getDate() - day);
+    return { since: d, label: "This Week" };
+  }
+  if (p === "month") {
+    const d = new Date(now.getFullYear(), now.getMonth(), 1);
+    return { since: d, label: "This Month" };
+  }
+  const d = new Date(now.getFullYear(), 0, 1);
+  return { since: d, label: "This Year" };
+}
+
 export function reportsMenu(): ReplyMarkup {
   return {
     inline_keyboard: [
       [{ text: "📅 Today", callback_data: "rpt:today" }, { text: "🗓 This Week", callback_data: "rpt:week" }],
-      [{ text: "📆 This Month", callback_data: "rpt:month" }],
+      [{ text: "📆 This Month", callback_data: "rpt:month" }, { text: "📈 This Year", callback_data: "rpt:year" }],
       [{ text: "🏆 Top Products (30d)", callback_data: "rpt:top" }],
-      [{ text: "📈 Profit & Loss (30d)", callback_data: "rpt:pl" }],
+      [{ text: "🧑‍💼 Staff Performance", callback_data: "rpt:staff" }],
       [{ text: "📄 Daily Summary PDF", callback_data: "rpt:pdf:daily" }],
       [{ text: "📄 PDF: Today", callback_data: "rpt:pdf:today" }, { text: "📄 PDF: Week", callback_data: "rpt:pdf:week" }],
-      [{ text: "📄 PDF: Month", callback_data: "rpt:pdf:month" }],
+      [{ text: "📄 PDF: Month", callback_data: "rpt:pdf:month" }, { text: "📄 PDF: Year", callback_data: "rpt:pdf:year" }],
       [{ text: "⬅️ Back", callback_data: "menu:main" }],
     ],
   };
@@ -55,7 +79,6 @@ async function periodSummary(chatId: number, sinceIso: string, label: string) {
   const gross = rows.reduce((s: number, x: any) => s + Number(x.total), 0);
   const credit = rows.filter((x: any) => x.payment_status === "credit").reduce((s: number, x: any) => s + Number(x.total), 0);
 
-  // Cost of goods sold via sale_items
   const ids = rows.map((r: any) => r.id);
   let cogs = 0;
   if (ids.length > 0) {
@@ -119,41 +142,65 @@ async function topProducts(chatId: number) {
   );
 }
 
-async function profitAndLoss(chatId: number) {
-  const since = new Date(Date.now() - 30 * 86400_000).toISOString();
-  await periodSummary(chatId, since, "Last 30 Days");
+async function staffPerformance(chatId: number) {
+  const db = getServiceClient();
+  const { since } = periodRange("month");
+  const { data: sales } = await db
+    .from("sales")
+    .select("user_id,total,payment_status")
+    .gte("created_at", since.toISOString());
+  const rows = sales ?? [];
+  if (rows.length === 0) {
+    await sendMessage(chatId, "No sales this month.", { reply_markup: reportsMenu() });
+    return;
+  }
+  const map = new Map<string, { count: number; gross: number; credit: number }>();
+  for (const r of rows) {
+    const k = String((r as any).user_id);
+    const e = map.get(k) ?? { count: 0, gross: 0, credit: 0 };
+    e.count++;
+    e.gross += Number((r as any).total);
+    if ((r as any).payment_status === "credit") e.credit += Number((r as any).total);
+    map.set(k, e);
+  }
+  const userIds = [...map.keys()];
+  const { data: users } = await db.from("bot_users").select("id,full_name,role").in("id", userIds);
+  const names = new Map((users ?? []).map((u: any) => [u.id, u.full_name as string]));
+  const entries = [...map.entries()].sort((a, b) => b[1].gross - a[1].gross);
+  const lines = entries.map(
+    ([uid, v], i) =>
+      `${i + 1}. <b>${escapeHtml(names.get(uid) ?? "Unknown")}</b>\n   ${v.count} sales • ₦${fmtMoney(v.gross)} (credit ₦${fmtMoney(v.credit)})`,
+  );
+  await sendMessage(
+    chatId,
+    `🧑‍💼 <b>Staff Performance — This Month</b>\n\n${lines.join("\n\n")}`,
+    { reply_markup: reportsMenu() },
+  );
 }
 
 export async function handleReportsCallback(data: string, chatId: number, user: BotUser): Promise<boolean> {
-  if (!data.startsWith("rpt:")) return false;
+  if (!data.startsWith("rpt:") && !data.startsWith("myperf:")) return false;
+
+  // Sales-rep personal performance — sales_rep allowed
+  if (data.startsWith("myperf:")) {
+    const period = data.slice("myperf:".length) as Period;
+    await personalPerformance(chatId, user, period);
+    return true;
+  }
+
   if (user.role !== "owner") {
     await sendMessage(chatId, "⛔ Owner only.", { reply_markup: BACK });
     return true;
   }
 
-  if (data === "rpt:today") {
-    const d = new Date(); d.setHours(0, 0, 0, 0);
-    await periodSummary(chatId, d.toISOString(), "Today");
+  if (data === "rpt:today" || data === "rpt:week" || data === "rpt:month" || data === "rpt:year") {
+    const { since, label } = periodRange(data.slice(4) as Period);
+    await periodSummary(chatId, since.toISOString(), label);
     return true;
   }
-  if (data === "rpt:week") {
-    const d = new Date(Date.now() - 7 * 86400_000);
-    await periodSummary(chatId, d.toISOString(), "Last 7 Days");
-    return true;
-  }
-  if (data === "rpt:month") {
-    const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0);
-    await periodSummary(chatId, d.toISOString(), "This Month");
-    return true;
-  }
-  if (data === "rpt:top") {
-    await topProducts(chatId);
-    return true;
-  }
-  if (data === "rpt:pl") {
-    await profitAndLoss(chatId);
-    return true;
-  }
+  if (data === "rpt:top") { await topProducts(chatId); return true; }
+  if (data === "rpt:staff") { await staffPerformance(chatId); return true; }
+
   if (data.startsWith("rpt:pdf:")) {
     const kind = data.slice("rpt:pdf:".length);
     await sendMessage(chatId, "📄 Generating PDF…");
@@ -162,10 +209,7 @@ export async function handleReportsCallback(data: string, chatId: number, user: 
         const { url, filename } = await buildDailySummaryPdf();
         await sendDocument(chatId, url, { caption: `📅 <b>Daily Summary</b>\n${filename}`, reply_markup: reportsMenu() });
       } else {
-        let since: Date; let label: string;
-        if (kind === "today") { since = new Date(); since.setHours(0, 0, 0, 0); label = "Today"; }
-        else if (kind === "week") { since = new Date(Date.now() - 7 * 86400_000); label = "Last 7 Days"; }
-        else { since = new Date(); since.setDate(1); since.setHours(0, 0, 0, 0); label = "This Month"; }
+        const { since, label } = periodRange(kind as Period);
         const { url, filename } = await buildSalesReportPdf({ sinceIso: since.toISOString(), label });
         await sendDocument(chatId, url, { caption: `📊 <b>Sales Report — ${label}</b>\n${filename}`, reply_markup: reportsMenu() });
       }
@@ -177,26 +221,48 @@ export async function handleReportsCallback(data: string, chatId: number, user: 
   return false;
 }
 
-export async function mySalesToday(chatId: number, user: BotUser) {
+function perfMenu(): ReplyMarkup {
+  return {
+    inline_keyboard: [
+      [{ text: "📅 Today", callback_data: "myperf:today" }, { text: "🗓 Week", callback_data: "myperf:week" }],
+      [{ text: "📆 Month", callback_data: "myperf:month" }, { text: "📈 Year", callback_data: "myperf:year" }],
+      [{ text: "⬅️ Back to Menu", callback_data: "menu:main" }],
+    ],
+  };
+}
+
+async function personalPerformance(chatId: number, user: BotUser, period: Period) {
   const db = getServiceClient();
-  const d = new Date(); d.setHours(0, 0, 0, 0);
+  const { since, label } = periodRange(period);
   const { data: rows } = await db
     .from("sales")
     .select("invoice_no,total,payment_status,created_at")
     .eq("user_id", user.id)
-    .gte("created_at", d.toISOString())
-    .order("created_at", { ascending: false });
-  if (!rows || rows.length === 0) {
-    await sendMessage(chatId, "📋 No sales recorded today.", { reply_markup: BACK });
+    .gte("created_at", since.toISOString())
+    .order("created_at", { ascending: false })
+    .limit(50);
+  const list = rows ?? [];
+  const total = list.reduce((s: number, x: any) => s + Number(x.total), 0);
+  const credit = list.filter((x: any) => x.payment_status === "credit").reduce((s: number, x: any) => s + Number(x.total), 0);
+  const header = `📋 <b>My Performance — ${label}</b>\n\nTransactions: <b>${list.length}</b>\nGross: <b>₦${fmtMoney(total)}</b>\nOn Credit: ₦${fmtMoney(credit)}`;
+  if (list.length === 0) {
+    await sendMessage(chatId, header + "\n\nNo sales yet.", { reply_markup: perfMenu() });
     return;
   }
-  const total = rows.reduce((s: number, x: any) => s + Number(x.total), 0);
-  const lines = rows.map(
+  const preview = list.slice(0, 10).map(
     (s: any) => `• <code>${escapeHtml(s.invoice_no)}</code> — ₦${fmtMoney(s.total)} (${s.payment_status})`,
   );
   await sendMessage(
     chatId,
-    `📋 <b>My Sales Today (${rows.length})</b>\n\n${lines.join("\n")}\n\n<b>Total: ₦${fmtMoney(total)}</b>`,
-    { reply_markup: BACK },
+    `${header}\n\n<b>Recent:</b>\n${preview.join("\n")}`,
+    { reply_markup: perfMenu() },
   );
+}
+
+export async function mySalesToday(chatId: number, user: BotUser) {
+  await personalPerformance(chatId, user, "today");
+}
+
+export async function openMyPerformance(chatId: number, user: BotUser) {
+  await personalPerformance(chatId, user, "today");
 }
