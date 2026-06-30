@@ -72,12 +72,14 @@ async function periodSummary(chatId: number, sinceIso: string, label: string) {
   const db = getServiceClient();
   const { data: sales } = await db
     .from("sales")
-    .select("id,total,payment_status,created_at,user_id")
+    .select("id,total,created_at,user_id,payments(method)")
     .gte("created_at", sinceIso);
   const rows = sales ?? [];
   const count = rows.length;
   const gross = rows.reduce((s: number, x: any) => s + Number(x.total), 0);
-  const credit = rows.filter((x: any) => x.payment_status === "credit").reduce((s: number, x: any) => s + Number(x.total), 0);
+  const isCredit = (x: any) => Array.isArray(x.payments) && x.payments.some((p: any) => p.method === "credit");
+  const credit = rows.filter(isCredit).reduce((s: number, x: any) => s + Number(x.total), 0);
+
 
   const ids = rows.map((r: any) => r.id);
   let cogs = 0;
