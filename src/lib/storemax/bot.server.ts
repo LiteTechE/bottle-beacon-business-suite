@@ -456,7 +456,7 @@ async function handleCallback(cb: TgCallback) {
   }
   if (data === "menu:mysales") {
     await answerCallbackQuery(cb.id);
-    await mySalesToday(chatId, botUser);
+    await openMyPerformance(chatId, botUser);
     return;
   }
   if (data === "menu:search") {
