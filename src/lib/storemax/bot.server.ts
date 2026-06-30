@@ -14,7 +14,7 @@ import { openCustomers, handleCustomerCallback, handleCustomerMessage } from "./
 import { openSuppliers, handleSupplierCallback, handleSupplierMessage } from "./suppliers.server";
 import { openStaff, handleStaffCallback, handleStaffMessage } from "./staff.server";
 import { openExpenses, handleExpenseCallback, handleExpenseMessage } from "./expenses.server";
-import { openReports, handleReportsCallback, mySalesToday } from "./reports.server";
+import { openReports, handleReportsCallback, openMyPerformance } from "./reports.server";
 import { openAI, handleAIMessage } from "./ai.server";
 import { openSettings, handleSettingsCallback, handleSettingsMessage } from "./settings.server";
 import { buildDailySummaryPdf } from "./pdf.server";
