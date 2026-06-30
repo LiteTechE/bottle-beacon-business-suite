@@ -137,11 +137,13 @@ export async function buildSalesReportPdf(opts: PeriodPdfOptions): Promise<{ url
 
   const { data: sales } = await db
     .from("sales")
-    .select("id,invoice_no,total,payment_status,created_at,user_id")
+    .select("id,invoice_no,total,created_at,user_id,payments(method)")
     .gte("created_at", opts.sinceIso)
     .lte("created_at", until)
     .order("created_at", { ascending: false });
   const rows = sales ?? [];
+  const methodOf = (x: any) => (Array.isArray(x.payments) && x.payments[0]?.method) || "cash";
+
 
   const ids = rows.map((r: any) => r.id);
   let cogs = 0;
