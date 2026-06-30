@@ -25,7 +25,7 @@ async function gatherContext(): Promise<string> {
   const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
 
   const [{ data: salesToday }, { data: salesMonth }, { data: lowStock }, { data: debtors }, { data: topProductsRaw }, { data: expenses }] = await Promise.all([
-    db.from("sales").select("total,payment_status").gte("created_at", today.toISOString()),
+    db.from("sales").select("total").gte("created_at", today.toISOString()),
     db.from("sales").select("total").gte("created_at", monthStart.toISOString()),
     db.from("products").select("name,current_stock,min_stock_level").lte("current_stock", 5).eq("archived", false).limit(20),
     db.from("customers").select("name,outstanding_balance").gt("outstanding_balance", 0).order("outstanding_balance", { ascending: false }).limit(10),
