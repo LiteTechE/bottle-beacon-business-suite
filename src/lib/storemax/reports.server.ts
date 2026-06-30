@@ -240,22 +240,24 @@ async function personalPerformance(chatId: number, user: BotUser, period: Period
   const { since, label } = periodRange(period);
   const { data: rows } = await db
     .from("sales")
-    .select("invoice_no,total,payment_status,created_at")
+    .select("invoice_no,total,created_at,payments(method)")
     .eq("user_id", user.id)
     .gte("created_at", since.toISOString())
     .order("created_at", { ascending: false })
     .limit(50);
   const list = rows ?? [];
+  const methodOf = (x: any) => (Array.isArray(x.payments) && x.payments[0]?.method) || "cash";
   const total = list.reduce((s: number, x: any) => s + Number(x.total), 0);
-  const credit = list.filter((x: any) => x.payment_status === "credit").reduce((s: number, x: any) => s + Number(x.total), 0);
+  const credit = list.filter((x: any) => methodOf(x) === "credit").reduce((s: number, x: any) => s + Number(x.total), 0);
   const header = `📋 <b>My Performance — ${label}</b>\n\nTransactions: <b>${list.length}</b>\nGross: <b>₦${fmtMoney(total)}</b>\nOn Credit: ₦${fmtMoney(credit)}`;
   if (list.length === 0) {
     await sendMessage(chatId, header + "\n\nNo sales yet.", { reply_markup: perfMenu() });
     return;
   }
   const preview = list.slice(0, 10).map(
-    (s: any) => `• <code>${escapeHtml(s.invoice_no)}</code> — ₦${fmtMoney(s.total)} (${s.payment_status})`,
+    (s: any) => `• <code>${escapeHtml(s.invoice_no)}</code> — ₦${fmtMoney(s.total)} (${methodOf(s)})`,
   );
+
   await sendMessage(
     chatId,
     `${header}\n\n<b>Recent:</b>\n${preview.join("\n")}`,
