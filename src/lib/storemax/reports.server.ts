@@ -72,12 +72,14 @@ async function periodSummary(chatId: number, sinceIso: string, label: string) {
   const db = getServiceClient();
   const { data: sales } = await db
     .from("sales")
-    .select("id,total,payment_status,created_at,user_id")
+    .select("id,total,created_at,user_id,payments(method)")
     .gte("created_at", sinceIso);
   const rows = sales ?? [];
   const count = rows.length;
   const gross = rows.reduce((s: number, x: any) => s + Number(x.total), 0);
-  const credit = rows.filter((x: any) => x.payment_status === "credit").reduce((s: number, x: any) => s + Number(x.total), 0);
+  const isCredit = (x: any) => Array.isArray(x.payments) && x.payments.some((p: any) => p.method === "credit");
+  const credit = rows.filter(isCredit).reduce((s: number, x: any) => s + Number(x.total), 0);
+
 
   const ids = rows.map((r: any) => r.id);
   let cogs = 0;
@@ -147,7 +149,7 @@ async function staffPerformance(chatId: number) {
   const { since } = periodRange("month");
   const { data: sales } = await db
     .from("sales")
-    .select("user_id,total,payment_status")
+    .select("user_id,total,payments(method)")
     .gte("created_at", since.toISOString());
   const rows = sales ?? [];
   if (rows.length === 0) {
@@ -160,9 +162,11 @@ async function staffPerformance(chatId: number) {
     const e = map.get(k) ?? { count: 0, gross: 0, credit: 0 };
     e.count++;
     e.gross += Number((r as any).total);
-    if ((r as any).payment_status === "credit") e.credit += Number((r as any).total);
+    const pays = (r as any).payments;
+    if (Array.isArray(pays) && pays.some((p: any) => p.method === "credit")) e.credit += Number((r as any).total);
     map.set(k, e);
   }
+
   const userIds = [...map.keys()];
   const { data: users } = await db.from("bot_users").select("id,full_name,role").in("id", userIds);
   const names = new Map((users ?? []).map((u: any) => [u.id, u.full_name as string]));
@@ -236,22 +240,24 @@ async function personalPerformance(chatId: number, user: BotUser, period: Period
   const { since, label } = periodRange(period);
   const { data: rows } = await db
     .from("sales")
-    .select("invoice_no,total,payment_status,created_at")
+    .select("invoice_no,total,created_at,payments(method)")
     .eq("user_id", user.id)
     .gte("created_at", since.toISOString())
     .order("created_at", { ascending: false })
     .limit(50);
   const list = rows ?? [];
+  const methodOf = (x: any) => (Array.isArray(x.payments) && x.payments[0]?.method) || "cash";
   const total = list.reduce((s: number, x: any) => s + Number(x.total), 0);
-  const credit = list.filter((x: any) => x.payment_status === "credit").reduce((s: number, x: any) => s + Number(x.total), 0);
+  const credit = list.filter((x: any) => methodOf(x) === "credit").reduce((s: number, x: any) => s + Number(x.total), 0);
   const header = `📋 <b>My Performance — ${label}</b>\n\nTransactions: <b>${list.length}</b>\nGross: <b>₦${fmtMoney(total)}</b>\nOn Credit: ₦${fmtMoney(credit)}`;
   if (list.length === 0) {
     await sendMessage(chatId, header + "\n\nNo sales yet.", { reply_markup: perfMenu() });
     return;
   }
   const preview = list.slice(0, 10).map(
-    (s: any) => `• <code>${escapeHtml(s.invoice_no)}</code> — ₦${fmtMoney(s.total)} (${s.payment_status})`,
+    (s: any) => `• <code>${escapeHtml(s.invoice_no)}</code> — ₦${fmtMoney(s.total)} (${methodOf(s)})`,
   );
+
   await sendMessage(
     chatId,
     `${header}\n\n<b>Recent:</b>\n${preview.join("\n")}`,

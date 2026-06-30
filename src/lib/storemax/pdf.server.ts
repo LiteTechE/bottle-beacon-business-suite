@@ -137,11 +137,13 @@ export async function buildSalesReportPdf(opts: PeriodPdfOptions): Promise<{ url
 
   const { data: sales } = await db
     .from("sales")
-    .select("id,invoice_no,total,payment_status,created_at,user_id")
+    .select("id,invoice_no,total,created_at,user_id,payments(method)")
     .gte("created_at", opts.sinceIso)
     .lte("created_at", until)
     .order("created_at", { ascending: false });
   const rows = sales ?? [];
+  const methodOf = (x: any) => (Array.isArray(x.payments) && x.payments[0]?.method) || "cash";
+
 
   const ids = rows.map((r: any) => r.id);
   let cogs = 0;
@@ -169,7 +171,7 @@ export async function buildSalesReportPdf(opts: PeriodPdfOptions): Promise<{ url
     .lte("created_at", until);
 
   const gross = rows.reduce((s: number, x: any) => s + Number(x.total), 0);
-  const credit = rows.filter((x: any) => x.payment_status === "credit").reduce((s: number, x: any) => s + Number(x.total), 0);
+  const credit = rows.filter((x: any) => methodOf(x) === "credit").reduce((s: number, x: any) => s + Number(x.total), 0);
   const expTotal = (expenses ?? []).reduce((s: number, e: any) => s + Number(e.amount), 0);
   const profit = gross - cogs - expTotal;
 
@@ -208,7 +210,7 @@ export async function buildSalesReportPdf(opts: PeriodPdfOptions): Promise<{ url
           ...rows.slice(0, 60).map((s: any) => [
             s.invoice_no,
             new Date(s.created_at).toLocaleString("en-NG"),
-            s.payment_status,
+            methodOf(s),
             `NGN ${fmt(s.total)}`,
           ]),
         ],
@@ -232,7 +234,7 @@ export async function buildDailySummaryPdf(dayIso?: string): Promise<{ url: stri
 
   const { data: sales } = await db
     .from("sales")
-    .select("id,total,payment_status,user_id,bot_users(full_name)")
+    .select("id,total,user_id,bot_users(full_name),payments(method)")
     .gte("created_at", start.toISOString())
     .lt("created_at", end.toISOString());
   const rows = (sales ?? []) as any[];
@@ -264,8 +266,9 @@ export async function buildDailySummaryPdf(dayIso?: string): Promise<{ url: stri
   const expTotal = (expenses ?? []).reduce((s: number, e: any) => s + Number(e.amount), 0);
 
   const gross = rows.reduce((s, x) => s + Number(x.total), 0);
-  const credit = rows.filter((x) => x.payment_status === "credit").reduce((s, x) => s + Number(x.total), 0);
+  const credit = rows.filter((x: any) => (Array.isArray(x.payments) && x.payments[0]?.method) === "credit").reduce((s: number, x: any) => s + Number(x.total), 0);
   const profit = gross - cogs - expTotal;
+
 
   // Per-rep breakdown
   const repMap = new Map<string, { name: string; count: number; total: number }>();
