@@ -266,8 +266,9 @@ export async function buildDailySummaryPdf(dayIso?: string): Promise<{ url: stri
   const expTotal = (expenses ?? []).reduce((s: number, e: any) => s + Number(e.amount), 0);
 
   const gross = rows.reduce((s, x) => s + Number(x.total), 0);
-  const credit = rows.filter((x) => x.payment_status === "credit").reduce((s, x) => s + Number(x.total), 0);
+  const credit = rows.filter((x: any) => (Array.isArray(x.payments) && x.payments[0]?.method) === "credit").reduce((s: number, x: any) => s + Number(x.total), 0);
   const profit = gross - cogs - expTotal;
+
 
   // Per-rep breakdown
   const repMap = new Map<string, { name: string; count: number; total: number }>();
