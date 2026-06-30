@@ -210,7 +210,7 @@ export async function buildSalesReportPdf(opts: PeriodPdfOptions): Promise<{ url
           ...rows.slice(0, 60).map((s: any) => [
             s.invoice_no,
             new Date(s.created_at).toLocaleString("en-NG"),
-            s.payment_status,
+            methodOf(s),
             `NGN ${fmt(s.total)}`,
           ]),
         ],
