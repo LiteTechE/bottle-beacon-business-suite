@@ -149,7 +149,7 @@ async function staffPerformance(chatId: number) {
   const { since } = periodRange("month");
   const { data: sales } = await db
     .from("sales")
-    .select("user_id,total,payment_status")
+    .select("user_id,total,payments(method)")
     .gte("created_at", since.toISOString());
   const rows = sales ?? [];
   if (rows.length === 0) {
@@ -162,9 +162,11 @@ async function staffPerformance(chatId: number) {
     const e = map.get(k) ?? { count: 0, gross: 0, credit: 0 };
     e.count++;
     e.gross += Number((r as any).total);
-    if ((r as any).payment_status === "credit") e.credit += Number((r as any).total);
+    const pays = (r as any).payments;
+    if (Array.isArray(pays) && pays.some((p: any) => p.method === "credit")) e.credit += Number((r as any).total);
     map.set(k, e);
   }
+
   const userIds = [...map.keys()];
   const { data: users } = await db.from("bot_users").select("id,full_name,role").in("id", userIds);
   const names = new Map((users ?? []).map((u: any) => [u.id, u.full_name as string]));
