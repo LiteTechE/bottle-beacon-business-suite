@@ -135,14 +135,30 @@ async function handleMessage(msg: { message_id: number; chat: { id: number }; fr
     if (!user.is_active) {
       await sendMessage(
         chatId,
-        `👋 Welcome <b>${escapeHtml(user.full_name)}</b>.\n\nYour account is pending approval by the owner.`,
+        `👋 Welcome <b>${escapeHtml(user.full_name)}</b>.\n\nYour account is pending approval by the owner. You'll be notified once approved.`,
       );
-      await notifyOwner(
-        "system",
-        "New sales rep awaiting approval",
-        `${user.full_name} (Telegram ID ${tg.id}) just opened the bot. Activate them from ⚙️ Settings → Staff.`,
-        { telegram_id: tg.id, user_id: user.id },
-      );
+      // Send owner a one-tap approve button
+      const { getOwnerTelegramId } = await import("./notify.server");
+      const ownerId = await getOwnerTelegramId();
+      if (ownerId) {
+        try {
+          await sendMessage(
+            ownerId,
+            `🆕 <b>New staff awaiting approval</b>\n\n` +
+              `Name: <b>${escapeHtml(user.full_name)}</b>\n` +
+              `Username: @${escapeHtml(user.username ?? "—")}\n` +
+              `Telegram ID: <code>${tg.id}</code>`,
+            {
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: "✅ Approve", callback_data: `staff:act:${user.id}` }],
+                  [{ text: "👤 View Profile", callback_data: `staff:view:${user.id}` }],
+                ],
+              },
+            },
+          );
+        } catch {}
+      }
       return;
     }
     if (!user.pin_hash) {
