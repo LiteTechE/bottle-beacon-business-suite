@@ -234,7 +234,7 @@ export async function buildDailySummaryPdf(dayIso?: string): Promise<{ url: stri
 
   const { data: sales } = await db
     .from("sales")
-    .select("id,total,payment_status,user_id,bot_users(full_name)")
+    .select("id,total,user_id,bot_users(full_name),payments(method)")
     .gte("created_at", start.toISOString())
     .lt("created_at", end.toISOString());
   const rows = (sales ?? []) as any[];
