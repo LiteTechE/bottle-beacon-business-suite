@@ -27,7 +27,7 @@ async function gatherContext(): Promise<string> {
   const [{ data: salesToday }, { data: salesMonth }, { data: lowStock }, { data: debtors }, { data: topProductsRaw }, { data: expenses }] = await Promise.all([
     db.from("sales").select("total").gte("created_at", today.toISOString()),
     db.from("sales").select("total").gte("created_at", monthStart.toISOString()),
-    db.from("products").select("name,current_stock,min_stock_level").lte("current_stock", 5).eq("archived", false).limit(20),
+    db.from("products").select("name,current_stock,min_stock,stock_packs,stock_bottles").eq("archived", false).order("current_stock", { ascending: true }).limit(20),
     db.from("customers").select("name,outstanding_balance").gt("outstanding_balance", 0).order("outstanding_balance", { ascending: false }).limit(10),
     db.from("sale_items").select("quantity,line_total,products(name)").limit(500),
     db.from("expenses").select("category,amount").gte("created_at", monthStart.toISOString()),
@@ -56,7 +56,7 @@ async function gatherContext(): Promise<string> {
     `Business: STOREMAX LIMITED (Beverage Distribution, Nigeria, currency ₦)`,
     `Today: ${todayCount} sales, gross ₦${fmtMoney(todayGross)}`,
     `This month gross: ₦${fmtMoney(monthGross)}`,
-    `Low stock (≤5): ${(lowStock ?? []).map((p: any) => `${p.name} (${p.current_stock})`).join(", ") || "none"}`,
+    `Low stock: ${(lowStock ?? []).filter((p: any) => Number(p.current_stock) <= Number(p.min_stock ?? 0)).map((p: any) => `${p.name} (${p.stock_packs ?? 0} packs + ${p.stock_bottles ?? 0} bottles)`).join(", ") || "none"}`,
     `Top debtors: ${(debtors ?? []).map((d: any) => `${d.name} ₦${fmtMoney(d.outstanding_balance)}`).join(", ") || "none"}`,
     `Top products (recent): ${top.map(([n, v]) => `${n} ${v.qty}u ₦${fmtMoney(v.revenue)}`).join(", ") || "none"}`,
     `Month expenses by category: ${[...expByCat.entries()].map(([c, v]) => `${c} ₦${fmtMoney(v)}`).join(", ") || "none"}`,
