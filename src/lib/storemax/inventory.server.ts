@@ -473,6 +473,12 @@ export async function handleInventoryMessage(text: string, chatId: number, user:
         return true;
       }
       patch.pack_size = Math.floor(v);
+      if (Number(prod.pack_selling_price ?? 0) === Number(prod.bottle_selling_price ?? prod.selling_price ?? 0) * Number(prod.pack_size ?? 1)) {
+        patch.pack_selling_price = Number(prod.bottle_selling_price ?? prod.selling_price ?? 0) * Math.floor(v);
+      }
+      if (Number(prod.pack_cost_price ?? 0) === Number(prod.bottle_cost_price ?? prod.cost_price ?? 0) * Number(prod.pack_size ?? 1)) {
+        patch.pack_cost_price = Number(prod.bottle_cost_price ?? prod.cost_price ?? 0) * Math.floor(v);
+      }
     } else if (field === "prices") {
       const nums = text.match(/\d+(?:\.\d+)?/g)?.map(Number) ?? [];
       if (nums.length < 4) {
