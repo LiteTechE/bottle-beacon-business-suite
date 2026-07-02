@@ -15,10 +15,12 @@ interface CartItem {
   product_id: string;
   name: string;
   sku: string | null;
+  sale_unit: "pack" | "bottle";
   qty: number;
   unit_price: number;
   cost_price: number;
   line_total: number;
+  pack_size: number;
 }
 
 const BACK: ReplyMarkup = { inline_keyboard: [[{ text: "⬅️ Back to Menu", callback_data: "menu:main" }]] };
@@ -33,9 +35,37 @@ function fmtMoney(n: number | string | null | undefined): string {
 
 function cartSummary(cart: CartItem[]): string {
   if (cart.length === 0) return "<i>(cart empty)</i>";
-  const lines = cart.map((c, i) => `${i + 1}. ${escapeHtml(c.name)} × ${c.qty} = ₦${fmtMoney(c.line_total)}`);
+  const lines = cart.map((c, i) => `${i + 1}. ${escapeHtml(c.name)} × ${c.qty} ${c.sale_unit}(s) = ₦${fmtMoney(c.line_total)}`);
   const total = cart.reduce((s, c) => s + c.line_total, 0);
   return `${lines.join("\n")}\n\n<b>Subtotal:</b> ₦${fmtMoney(total)}`;
+}
+
+function fmtQty(n: number | string | null | undefined): string {
+  const v = Number(n ?? 0);
+  return Number.isInteger(v) ? String(v) : v.toLocaleString("en-NG", { maximumFractionDigits: 2 });
+}
+
+function stockLabel(p: any): string {
+  const packSize = Number(p.pack_size ?? 1);
+  const packs = Number(p.stock_packs ?? 0);
+  const bottles = Number(p.stock_bottles ?? p.current_stock ?? 0);
+  const total = Number(p.current_stock ?? packs * packSize + bottles);
+  return `${fmtQty(packs)} pack(s) + ${fmtQty(bottles)} bottle(s) (${fmtQty(total)} bottles total, ${packSize}/pack)`;
+}
+
+function calculateBottleSaleStock(p: any, qty: number): { stock_packs: number; stock_bottles: number } | null {
+  const packSize = Number(p.pack_size ?? 1);
+  const packs = Number(p.stock_packs ?? 0);
+  const bottles = Number(p.stock_bottles ?? p.current_stock ?? 0);
+  const total = packs * packSize + bottles;
+  if (qty > total) return null;
+  if (qty <= bottles) return { stock_packs: packs, stock_bottles: bottles - qty };
+  const neededFromPacks = qty - bottles;
+  const packsToOpen = Math.ceil(neededFromPacks / packSize);
+  return {
+    stock_packs: packs - packsToOpen,
+    stock_bottles: bottles + packsToOpen * packSize - qty,
+  };
 }
 
 function getCart(s: any): CartItem[] {
@@ -87,7 +117,7 @@ export async function handleSaleCallback(data: string, chatId: number, user: Bot
     const pid = data.slice("sale:pick:".length);
     const { data: prod } = await db
       .from("products")
-      .select("id,name,sku,current_stock,selling_price,cost_price")
+      .select("id,name,sku,current_stock,stock_packs,stock_bottles,pack_size,pack_selling_price,bottle_selling_price,pack_cost_price,bottle_cost_price,selling_price,cost_price")
       .eq("id", pid)
       .maybeSingle();
     if (!prod) {
@@ -95,13 +125,32 @@ export async function handleSaleCallback(data: string, chatId: number, user: Bot
       return true;
     }
     await saveSession(user.telegram_id, {
-      state: "sale:qty",
+      state: "sale:unit",
       data: { ...sData, pending: prod },
     });
     await sendMessage(
       chatId,
-      `<b>${escapeHtml(prod.name)}</b>\nPrice: ₦${fmtMoney(prod.selling_price)} • Stock: ${prod.current_stock}\n\nSend the <b>quantity</b> to sell.`,
+      `<b>${escapeHtml(prod.name)}</b>\nStock: ${escapeHtml(stockLabel(prod))}\nPack: ₦${fmtMoney((prod as any).pack_selling_price)} • Bottle: ₦${fmtMoney((prod as any).bottle_selling_price ?? (prod as any).selling_price)}\n\nChoose how you are selling it:`,
+      { reply_markup: { inline_keyboard: [
+        [{ text: "📦 Sell Packs", callback_data: "sale:unit:pack" }, { text: "🍾 Sell Bottles", callback_data: "sale:unit:bottle" }],
+        [{ text: "❌ Cancel Sale", callback_data: "sale:cancel" }],
+      ] } },
     );
+    return true;
+  }
+
+  if (data === "sale:unit:pack" || data === "sale:unit:bottle") {
+    const saleUnit = data.endsWith(":pack") ? "pack" : "bottle";
+    const pending = sData.pending;
+    if (!pending) {
+      await saveSession(user.telegram_id, { state: "sale:search", data: { ...sData, pending: null } });
+      await sendMessage(chatId, "Send a product name, SKU, or barcode.");
+      return true;
+    }
+    const available = saleUnit === "pack" ? Number(pending.stock_packs ?? 0) : Number(pending.current_stock ?? 0);
+    const price = saleUnit === "pack" ? Number(pending.pack_selling_price ?? 0) : Number(pending.bottle_selling_price ?? pending.selling_price ?? 0);
+    await saveSession(user.telegram_id, { state: "sale:qty", data: { ...sData, sale_unit: saleUnit } });
+    await sendMessage(chatId, `<b>${escapeHtml(pending.name)}</b>\nSelling: <b>${saleUnit}(s)</b> at ₦${fmtMoney(price)} each\nAvailable: ${fmtQty(available)} ${saleUnit}(s)\n\nSend quantity to sell.`);
     return true;
   }
 
@@ -172,7 +221,7 @@ export async function handleSaleMessage(text: string, chatId: number, user: BotU
     const q = text.trim();
     const { data: rows } = await db
       .from("products")
-      .select("id,name,sku,current_stock,selling_price,cost_price")
+      .select("id,name,sku,current_stock,stock_packs,stock_bottles,pack_size,pack_selling_price,bottle_selling_price,pack_cost_price,bottle_cost_price,selling_price,cost_price")
       .eq("archived", false)
       .gt("current_stock", 0)
       .or(`name.ilike.%${q}%,sku.ilike.%${q}%,barcode.eq.${q}`)
@@ -183,7 +232,7 @@ export async function handleSaleMessage(text: string, chatId: number, user: BotU
     }
     const lines = rows.map(
       (p: any) =>
-        `• <b>${escapeHtml(p.name)}</b> — ₦${fmtMoney(p.selling_price)} • Stock: ${p.current_stock}`,
+        `• <b>${escapeHtml(p.name)}</b> — Pack ₦${fmtMoney(p.pack_selling_price)} • Bottle ₦${fmtMoney(p.bottle_selling_price ?? p.selling_price)}\n   Stock: ${escapeHtml(stockLabel(p))}`,
     );
     const buttons = rows.map((p: any) => [{ text: `${p.name} — ₦${fmtMoney(p.selling_price)}`.slice(0, 60), callback_data: `sale:pick:${p.id}` }]);
     buttons.push([{ text: "❌ Cancel Sale", callback_data: "sale:cancel" }]);
@@ -194,6 +243,7 @@ export async function handleSaleMessage(text: string, chatId: number, user: BotU
   if (state === "sale:qty") {
     const qty = Number(text);
     const pending = sData.pending;
+    const saleUnit = (sData.sale_unit === "pack" ? "pack" : "bottle") as "pack" | "bottle";
     if (!pending) {
       await saveSession(user.telegram_id, { state: "sale:search", data: { ...sData, pending: null } });
       await sendMessage(chatId, "Send a product name, SKU, or barcode.");
@@ -203,28 +253,32 @@ export async function handleSaleMessage(text: string, chatId: number, user: BotU
       await sendMessage(chatId, "Invalid quantity. Send a positive number.");
       return true;
     }
-    if (qty > Number(pending.current_stock)) {
-      await sendMessage(chatId, `Only ${pending.current_stock} in stock. Send a smaller quantity.`);
+    const available = saleUnit === "pack" ? Number(pending.stock_packs ?? 0) : Number(pending.current_stock ?? 0);
+    if (qty > available) {
+      await sendMessage(chatId, `Only ${fmtQty(available)} ${saleUnit}(s) in stock. Send a smaller quantity.`);
       return true;
     }
-    const unit = Number(pending.selling_price);
+    const unit = saleUnit === "pack" ? Number(pending.pack_selling_price ?? 0) : Number(pending.bottle_selling_price ?? pending.selling_price ?? 0);
+    const cost = saleUnit === "pack" ? Number(pending.pack_cost_price ?? 0) : Number(pending.bottle_cost_price ?? pending.cost_price ?? 0);
     const item: CartItem = {
       product_id: pending.id,
       name: pending.name,
       sku: pending.sku ?? null,
+      sale_unit: saleUnit,
       qty,
       unit_price: unit,
-      cost_price: Number(pending.cost_price ?? 0),
+      cost_price: cost,
       line_total: +(unit * qty).toFixed(2),
+      pack_size: Number(pending.pack_size ?? 1),
     };
     const newCart = [...cart, item];
     await saveSession(user.telegram_id, {
       state: "sale:more",
-      data: { ...sData, pending: null, cart: newCart },
+      data: { ...sData, pending: null, sale_unit: null, cart: newCart },
     });
     await sendMessage(
       chatId,
-      `✅ Added: <b>${escapeHtml(item.name)}</b> × ${qty} = ₦${fmtMoney(item.line_total)}\n\n${cartSummary(newCart)}`,
+      `✅ Added: <b>${escapeHtml(item.name)}</b> × ${qty} ${saleUnit}(s) = ₦${fmtMoney(item.line_total)}\n\n${cartSummary(newCart)}`,
       {
         reply_markup: {
           inline_keyboard: [
@@ -284,6 +338,32 @@ async function finalizeSale(
   const invoice = await nextInvoiceNo();
   const customerId: string | null = sData.customer_id ?? null;
 
+  const productIds = [...new Set(cart.map((c) => c.product_id))];
+  const { data: liveProducts } = await db
+    .from("products")
+    .select("id,name,current_stock,stock_packs,stock_bottles,pack_size,archived")
+    .in("id", productIds);
+  const live = new Map((liveProducts ?? []).map((p: any) => [String(p.id), { ...p }]));
+  for (const c of cart) {
+    const prod = live.get(c.product_id) as any;
+    if (!prod || prod.archived) {
+      await sendMessage(chatId, `❌ ${escapeHtml(c.name)} is no longer available. Please start the sale again.`, { reply_markup: BACK });
+      await saveSession(user.telegram_id, { state: null, data: {} });
+      return true;
+    }
+    const next = c.sale_unit === "pack"
+      ? { stock_packs: Number(prod.stock_packs ?? 0) - c.qty, stock_bottles: Number(prod.stock_bottles ?? 0) }
+      : calculateBottleSaleStock(prod, c.qty);
+    if (!next || next.stock_packs < 0 || next.stock_bottles < 0) {
+      await sendMessage(chatId, `❌ Not enough stock for <b>${escapeHtml(c.name)}</b>. Current: ${escapeHtml(stockLabel(prod))}. Please start the sale again.`, { reply_markup: BACK });
+      await saveSession(user.telegram_id, { state: null, data: {} });
+      return true;
+    }
+    prod.stock_packs = next.stock_packs;
+    prod.stock_bottles = next.stock_bottles;
+    prod.current_stock = next.stock_packs * Number(prod.pack_size ?? 1) + next.stock_bottles;
+  }
+
   const { data: sale, error: saleErr } = await db
     .from("sales")
     .insert({
@@ -313,6 +393,9 @@ async function finalizeSale(
     unit_price: c.unit_price,
     cost_price: c.cost_price,
     line_total: c.line_total,
+    sale_unit: c.sale_unit,
+    pack_quantity: c.sale_unit === "pack" ? c.qty : 0,
+    bottle_quantity: c.sale_unit === "bottle" ? c.qty : c.qty * c.pack_size,
   }));
   await db.from("sale_items").insert(items);
 
@@ -323,20 +406,27 @@ async function finalizeSale(
   });
 
   for (const c of cart) {
+    const physicalChange = c.sale_unit === "pack" ? -(c.qty * c.pack_size) : -c.qty;
     await db.from("stock_movements").insert({
       product_id: c.product_id,
-      change: -c.qty,
+      change: physicalChange,
       reason: "sale",
       reference: invoice,
       user_id: user.id,
     });
-    // Decrement stock
-    const { data: prod } = await db.from("products").select("current_stock,min_stock,name").eq("id", c.product_id).single();
+    const { data: prod } = await db.from("products").select("current_stock,min_stock,name,stock_packs,stock_bottles,pack_size").eq("id", c.product_id).single();
     if (prod) {
-      const newStock = Number(prod.current_stock) - c.qty;
-      await db.from("products").update({ current_stock: newStock }).eq("id", c.product_id);
-      if (newStock <= Number(prod.min_stock)) {
-        await notifyOwner("low_stock", "Low stock alert", `${prod.name} is at ${newStock} (min ${prod.min_stock}).`, {
+      const next = c.sale_unit === "pack"
+        ? { stock_packs: Number((prod as any).stock_packs ?? 0) - c.qty, stock_bottles: Number((prod as any).stock_bottles ?? 0) }
+        : calculateBottleSaleStock(prod, c.qty);
+      if (!next || next.stock_packs < 0 || next.stock_bottles < 0) {
+        await notifyOwner("low_stock", "Stock update warning", `${prod.name} did not have enough ${c.sale_unit} stock while closing ${invoice}.`, { product_id: c.product_id });
+        continue;
+      }
+      const { data: updated } = await db.from("products").update(next).eq("id", c.product_id).select("current_stock,min_stock,name").single();
+      const newStock = Number((updated as any)?.current_stock ?? 0);
+      if (newStock <= Number((updated as any)?.min_stock ?? prod.min_stock)) {
+        await notifyOwner("low_stock", "Low stock alert", `${prod.name} is at ${fmtQty(newStock)} bottle(s) total (min ${prod.min_stock}).`, {
           product_id: c.product_id,
         });
       }
@@ -372,7 +462,7 @@ async function finalizeSale(
 
 function formatReceipt(invoice: string, cart: CartItem[], total: number, method: string, customer: string, cashier: string): string {
   const lines = cart
-    .map((c) => `  ${escapeHtml(c.name)}\n  ${c.qty} × ₦${fmtMoney(c.unit_price)} = ₦${fmtMoney(c.line_total)}`)
+    .map((c) => `  ${escapeHtml(c.name)}\n  ${c.qty} ${c.sale_unit}(s) × ₦${fmtMoney(c.unit_price)} = ₦${fmtMoney(c.line_total)}`)
     .join("\n");
   return (
     `🧾 <b>STOREMAX LIMITED</b>\n` +

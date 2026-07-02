@@ -302,6 +302,8 @@ export type Database = {
         Row: {
           archived: boolean
           barcode: string | null
+          bottle_cost_price: number
+          bottle_selling_price: number
           category_id: string | null
           cost_price: number
           created_at: string
@@ -310,8 +312,13 @@ export type Database = {
           image_url: string | null
           min_stock: number
           name: string
+          pack_cost_price: number
+          pack_selling_price: number
+          pack_size: number
           selling_price: number
           sku: string
+          stock_bottles: number
+          stock_packs: number
           supplier_id: string | null
           unit: string | null
           updated_at: string
@@ -319,6 +326,8 @@ export type Database = {
         Insert: {
           archived?: boolean
           barcode?: string | null
+          bottle_cost_price?: number
+          bottle_selling_price?: number
           category_id?: string | null
           cost_price?: number
           created_at?: string
@@ -327,8 +336,13 @@ export type Database = {
           image_url?: string | null
           min_stock?: number
           name: string
+          pack_cost_price?: number
+          pack_selling_price?: number
+          pack_size?: number
           selling_price?: number
           sku: string
+          stock_bottles?: number
+          stock_packs?: number
           supplier_id?: string | null
           unit?: string | null
           updated_at?: string
@@ -336,6 +350,8 @@ export type Database = {
         Update: {
           archived?: boolean
           barcode?: string | null
+          bottle_cost_price?: number
+          bottle_selling_price?: number
           category_id?: string | null
           cost_price?: number
           created_at?: string
@@ -344,8 +360,13 @@ export type Database = {
           image_url?: string | null
           min_stock?: number
           name?: string
+          pack_cost_price?: number
+          pack_selling_price?: number
+          pack_size?: number
           selling_price?: number
           sku?: string
+          stock_bottles?: number
+          stock_packs?: number
           supplier_id?: string | null
           unit?: string | null
           updated_at?: string
@@ -369,30 +390,39 @@ export type Database = {
       }
       sale_items: {
         Row: {
+          bottle_quantity: number
           cost_price: number
           id: string
           line_total: number
+          pack_quantity: number
           product_id: string
           quantity: number
           sale_id: string
+          sale_unit: string
           unit_price: number
         }
         Insert: {
+          bottle_quantity?: number
           cost_price?: number
           id?: string
           line_total: number
+          pack_quantity?: number
           product_id: string
           quantity: number
           sale_id: string
+          sale_unit?: string
           unit_price: number
         }
         Update: {
+          bottle_quantity?: number
           cost_price?: number
           id?: string
           line_total?: number
+          pack_quantity?: number
           product_id?: string
           quantity?: number
           sale_id?: string
+          sale_unit?: string
           unit_price?: number
         }
         Relationships: [

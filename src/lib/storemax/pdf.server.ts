@@ -1,6 +1,9 @@
-// PDF generation + upload to Supabase Storage, returning a signed URL
+// PDF generation + upload to private storage, returning a signed URL
 // suitable for Telegram sendDocument.
-import type { PDFFont, PDFPage } from "pdf-lib";
+//
+// Keep this module dependency-free. Some PDF libraries pull CommonJS helpers
+// that fail in the serverless runtime, causing errors like:
+// "Cannot destructure property 'extends' of 'toESM(...).default'...".
 import { getServiceClient } from "./db.server";
 import { getSettings } from "./settings.server";
 
@@ -20,91 +23,138 @@ interface PdfDoc {
 const PAGE_W = 595;
 const PAGE_H = 842;
 const MARGIN = 40;
+const CONTENT_W = PAGE_W - MARGIN * 2;
 
-async function renderPdf(doc: PdfDoc): Promise<Uint8Array> {
-  const { PDFDocument, StandardFonts, rgb } = await import("pdf-lib");
-  const pdf = await PDFDocument.create();
-  const font = await pdf.embedFont(StandardFonts.Helvetica);
-  const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
-  let page = pdf.addPage([PAGE_W, PAGE_H]);
+function enc(s: string): string {
+  return String(s ?? "")
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2013\u2014]/g, "-")
+    .replace(/₦/g, "NGN ")
+    .replace(/[^\x09\x0A\x0D\x20-\x7E]/g, "")
+    .replace(/\\/g, "\\\\")
+    .replace(/\(/g, "\\(")
+    .replace(/\)/g, "\\)");
+}
+
+function wrapText(text: string, maxChars: number): string[] {
+  const words = String(text ?? "").split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let line = "";
+  for (const word of words) {
+    const next = line ? `${line} ${word}` : word;
+    if (next.length > maxChars && line) {
+      lines.push(line);
+      line = word;
+    } else if (word.length > maxChars) {
+      if (line) lines.push(line);
+      for (let i = 0; i < word.length; i += maxChars) lines.push(word.slice(i, i + maxChars));
+      line = "";
+    } else {
+      line = next;
+    }
+  }
+  if (line) lines.push(line);
+  return lines.length ? lines : [""];
+}
+
+function renderPdf(doc: PdfDoc): Uint8Array {
+  type Op = string;
+  const pages: Op[][] = [];
+  let ops: Op[] = [];
   let y = PAGE_H - MARGIN;
 
-  const ensure = (needed: number) => {
-    if (y - needed < MARGIN) {
-      page = pdf.addPage([PAGE_W, PAGE_H]);
-      y = PAGE_H - MARGIN;
-    }
+  const newPage = () => {
+    pages.push(ops);
+    ops = [];
+    y = PAGE_H - MARGIN;
   };
-  const drawText = (
-    p: PDFPage,
-    text: string,
-    x: number,
-    yy: number,
-    f: PDFFont,
-    size: number,
-    color = rgb(0.1, 0.1, 0.1),
-  ) => {
-    p.drawText(sanitize(text), { x, y: yy, size, font: f, color });
+  const ensure = (needed: number) => {
+    if (y - needed < MARGIN) newPage();
+  };
+  const text = (value: string, x: number, yy: number, size = 9, font = "F1") => {
+    ops.push(`BT /${font} ${size} Tf ${x.toFixed(1)} ${yy.toFixed(1)} Td (${enc(value)}) Tj ET`);
+  };
+  const line = (x1: number, y1: number, x2: number, y2: number, shade = "0.75") => {
+    ops.push(`${shade} G 0.5 w ${x1.toFixed(1)} ${y1.toFixed(1)} m ${x2.toFixed(1)} ${y2.toFixed(1)} l S 0 G`);
   };
 
-  // Header
-  drawText(page, doc.title, MARGIN, y, bold, 18);
-  y -= 22;
+  text(doc.title, MARGIN, y, 18, "F2");
+  y -= 23;
   if (doc.subtitle) {
-    drawText(page, doc.subtitle, MARGIN, y, font, 10, rgb(0.35, 0.35, 0.35));
+    text(doc.subtitle, MARGIN, y, 10, "F1");
     y -= 18;
   }
-  page.drawLine({
-    start: { x: MARGIN, y },
-    end: { x: PAGE_W - MARGIN, y },
-    thickness: 0.5,
-    color: rgb(0.7, 0.7, 0.7),
-  });
-  y -= 14;
+  line(MARGIN, y, PAGE_W - MARGIN, y);
+  y -= 16;
 
   for (const section of doc.sections) {
     if (section.heading) {
-      ensure(20);
-      drawText(page, section.heading, MARGIN, y, bold, 12);
-      y -= 16;
+      ensure(24);
+      text(section.heading, MARGIN, y, 12, "F2");
+      y -= 17;
     }
     const cols = section.rows[0]?.length ?? 1;
-    const widths = section.columnWidths ?? Array(cols).fill((PAGE_W - 2 * MARGIN) / cols);
+    const widths = section.columnWidths ?? Array(cols).fill(CONTENT_W / cols);
     for (let r = 0; r < section.rows.length; r++) {
-      ensure(16);
-      const row = section.rows[r];
+      const row = section.rows[r] ?? [];
+      const wrapped = row.map((cell, c) => wrapText(cell, Math.max(8, Math.floor((widths[c] ?? 80) / 5.2))));
+      const height = Math.max(...wrapped.map((v) => v.length)) * 11 + 4;
+      ensure(height + 4);
+      if (r === 0) line(MARGIN, y + 4, PAGE_W - MARGIN, y + 4, "0.65");
       let x = MARGIN;
-      const rowFont = r === 0 ? bold : font;
       for (let c = 0; c < row.length; c++) {
-        drawText(page, row[c] ?? "", x, y, rowFont, 9);
+        const f = r === 0 ? "F2" : "F1";
+        wrapped[c].slice(0, 4).forEach((part, i) => text(part, x, y - i * 11, 9, f));
         x += widths[c] ?? 80;
       }
-      y -= 13;
+      y -= height;
+      if (r === 0) line(MARGIN, y + 4, PAGE_W - MARGIN, y + 4, "0.85");
     }
-    y -= 6;
+    y -= 8;
   }
 
   if (doc.footer) {
-    ensure(20);
-    page.drawLine({
-      start: { x: MARGIN, y },
-      end: { x: PAGE_W - MARGIN, y },
-      thickness: 0.5,
-      color: rgb(0.8, 0.8, 0.8),
-    });
-    y -= 12;
-    drawText(page, doc.footer, MARGIN, y, font, 8, rgb(0.4, 0.4, 0.4));
+    ensure(24);
+    line(MARGIN, y, PAGE_W - MARGIN, y, "0.85");
+    y -= 13;
+    text(doc.footer, MARGIN, y, 8, "F1");
   }
+  pages.push(ops);
 
-  return await pdf.save();
-}
+  const objects: string[] = [];
+  const add = (body: string) => {
+    objects.push(body);
+    return objects.length;
+  };
+  const catalogId = add("<< /Type /Catalog /Pages 2 0 R >>");
+  void catalogId;
+  objects.push(""); // pages object placeholder, object 2
+  const fontId = add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
+  const boldId = add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>");
+  const pageIds: number[] = [];
 
-function sanitize(s: string): string {
-  // Helvetica is WinAnsi — strip non-encodable chars (₦, emoji, etc.)
-  return s.replace(/[^\x20-\x7E]/g, (ch) => {
-    if (ch === "₦") return "NGN ";
-    return "";
-  });
+  for (const pageOps of pages) {
+    const stream = pageOps.join("\n");
+    const contentId = add(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
+    const pageId = add(
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PAGE_W} ${PAGE_H}] /Resources << /Font << /F1 ${fontId} 0 R /F2 ${boldId} 0 R >> >> /Contents ${contentId} 0 R >>`,
+    );
+    pageIds.push(pageId);
+  }
+  objects[1] = `<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(" ")}] /Count ${pageIds.length} >>`;
+
+  let pdf = "%PDF-1.4\n";
+  const offsets = [0];
+  for (let i = 0; i < objects.length; i++) {
+    offsets.push(pdf.length);
+    pdf += `${i + 1} 0 obj\n${objects[i]}\nendobj\n`;
+  }
+  const xref = pdf.length;
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (let i = 1; i < offsets.length; i++) pdf += `${String(offsets[i]).padStart(10, "0")} 00000 n \n`;
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+  return new TextEncoder().encode(pdf);
 }
 
 async function uploadAndSign(bytes: Uint8Array, name: string): Promise<string> {
@@ -135,23 +185,23 @@ export async function buildSalesReportPdf(opts: PeriodPdfOptions): Promise<{ url
   const settings = await getSettings();
   const until = opts.untilIso ?? new Date().toISOString();
 
-  const { data: sales } = await db
+  const { data: sales, error: salesErr } = await db
     .from("sales")
     .select("id,invoice_no,total,created_at,user_id,payments(method)")
     .gte("created_at", opts.sinceIso)
     .lte("created_at", until)
     .order("created_at", { ascending: false });
+  if (salesErr) throw new Error(`Sales query failed: ${salesErr.message}`);
   const rows = sales ?? [];
   const methodOf = (x: any) => (Array.isArray(x.payments) && x.payments[0]?.method) || "cash";
 
-
   const ids = rows.map((r: any) => r.id);
   let cogs = 0;
-  let itemMap = new Map<string, { name: string; qty: number; revenue: number }>();
+  const itemMap = new Map<string, { name: string; qty: number; revenue: number }>();
   if (ids.length > 0) {
     const { data: items } = await db
       .from("sale_items")
-      .select("product_id,quantity,cost_price,line_total,products(name)")
+      .select("product_id,quantity,cost_price,line_total,sale_unit,products(name)")
       .in("sale_id", ids);
     for (const it of items ?? []) {
       const i = it as any;
@@ -174,16 +224,15 @@ export async function buildSalesReportPdf(opts: PeriodPdfOptions): Promise<{ url
   const credit = rows.filter((x: any) => methodOf(x) === "credit").reduce((s: number, x: any) => s + Number(x.total), 0);
   const expTotal = (expenses ?? []).reduce((s: number, e: any) => s + Number(e.amount), 0);
   const profit = gross - cogs - expTotal;
-
   const top = [...itemMap.values()].sort((a, b) => b.revenue - a.revenue).slice(0, 10);
 
-  const bytes = await renderPdf({
-    title: `${settings.business_name} — Sales Report`,
-    subtitle: `${opts.label} • Generated ${new Date().toLocaleString("en-NG")}`,
+  const bytes = renderPdf({
+    title: `${settings.business_name} - Sales Report`,
+    subtitle: `${opts.label} | Generated ${new Date().toLocaleString("en-NG")}`,
     sections: [
       {
         heading: "Summary",
-        columnWidths: [200, 200],
+        columnWidths: [220, 180],
         rows: [
           ["Metric", "Value"],
           ["Transactions", String(rows.length)],
@@ -206,8 +255,8 @@ export async function buildSalesReportPdf(opts: PeriodPdfOptions): Promise<{ url
         heading: `Transactions (${rows.length})`,
         columnWidths: [120, 140, 100, 120],
         rows: [
-          ["Invoice", "Date", "Status", "Total"],
-          ...rows.slice(0, 60).map((s: any) => [
+          ["Invoice", "Date", "Method", "Total"],
+          ...rows.slice(0, 80).map((s: any) => [
             s.invoice_no,
             new Date(s.created_at).toLocaleString("en-NG"),
             methodOf(s),
@@ -216,7 +265,7 @@ export async function buildSalesReportPdf(opts: PeriodPdfOptions): Promise<{ url
         ],
       },
     ],
-    footer: `${settings.business_name} • ${settings.business_address ?? ""} • ${settings.business_phone ?? ""}`,
+    footer: `${settings.business_name} | ${settings.business_address ?? ""} | ${settings.business_phone ?? ""}`,
   });
 
   const filename = `sales-${opts.label.replace(/\W+/g, "_")}-${Date.now()}.pdf`;
@@ -232,11 +281,12 @@ export async function buildDailySummaryPdf(dayIso?: string): Promise<{ url: stri
   const end = new Date(start);
   end.setDate(end.getDate() + 1);
 
-  const { data: sales } = await db
+  const { data: sales, error: salesErr } = await db
     .from("sales")
     .select("id,total,user_id,bot_users(full_name),payments(method)")
     .gte("created_at", start.toISOString())
     .lt("created_at", end.toISOString());
+  if (salesErr) throw new Error(`Daily sales query failed: ${salesErr.message}`);
   const rows = (sales ?? []) as any[];
 
   const ids = rows.map((r) => r.id);
@@ -264,13 +314,10 @@ export async function buildDailySummaryPdf(dayIso?: string): Promise<{ url: stri
     .gte("created_at", start.toISOString())
     .lt("created_at", end.toISOString());
   const expTotal = (expenses ?? []).reduce((s: number, e: any) => s + Number(e.amount), 0);
-
   const gross = rows.reduce((s, x) => s + Number(x.total), 0);
   const credit = rows.filter((x: any) => (Array.isArray(x.payments) && x.payments[0]?.method) === "credit").reduce((s: number, x: any) => s + Number(x.total), 0);
   const profit = gross - cogs - expTotal;
 
-
-  // Per-rep breakdown
   const repMap = new Map<string, { name: string; count: number; total: number }>();
   for (const s of rows) {
     const name = s.bot_users?.full_name ?? "Unknown";
@@ -282,9 +329,11 @@ export async function buildDailySummaryPdf(dayIso?: string): Promise<{ url: stri
 
   const { data: lowStock } = await db
     .from("products")
-    .select("name,stock,min_stock_level")
-    .lte("stock", 100000); // fetch and filter below
-  const low = (lowStock ?? []).filter((p: any) => Number(p.stock) <= Number(p.min_stock_level ?? 0));
+    .select("name,current_stock,min_stock,stock_packs,stock_bottles,pack_size")
+    .eq("archived", false)
+    .order("current_stock", { ascending: true })
+    .limit(100);
+  const low = (lowStock ?? []).filter((p: any) => Number(p.current_stock) <= Number(p.min_stock ?? 0));
 
   const { data: debtors } = await db
     .from("customers")
@@ -296,13 +345,13 @@ export async function buildDailySummaryPdf(dayIso?: string): Promise<{ url: stri
   const top = [...productMap.values()].sort((a, b) => b.revenue - a.revenue).slice(0, 10);
   const dateLabel = start.toLocaleDateString("en-NG", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
 
-  const bytes = await renderPdf({
-    title: `${settings.business_name} — Daily Summary`,
+  const bytes = renderPdf({
+    title: `${settings.business_name} - Daily Summary`,
     subtitle: dateLabel,
     sections: [
       {
         heading: "Today at a Glance",
-        columnWidths: [200, 200],
+        columnWidths: [220, 180],
         rows: [
           ["Metric", "Value"],
           ["Transactions", String(rows.length)],
@@ -319,10 +368,7 @@ export async function buildDailySummaryPdf(dayIso?: string): Promise<{ url: stri
         rows:
           repMap.size === 0
             ? [["Staff", "Sales", "Total"], ["(no sales)", "-", "-"]]
-            : [
-                ["Staff", "Sales", "Total"],
-                ...[...repMap.values()].map((r) => [r.name, String(r.count), `NGN ${fmt(r.total)}`]),
-              ],
+            : [["Staff", "Sales", "Total"], ...[...repMap.values()].map((r) => [r.name, String(r.count), `NGN ${fmt(r.total)}`])],
       },
       {
         heading: "Top Products Today",
@@ -334,28 +380,25 @@ export async function buildDailySummaryPdf(dayIso?: string): Promise<{ url: stri
       },
       {
         heading: `Low Stock (${low.length})`,
-        columnWidths: [320, 80, 80],
+        columnWidths: [260, 120, 80],
         rows:
           low.length === 0
             ? [["Product", "Stock", "Min"], ["(none)", "-", "-"]]
             : [
                 ["Product", "Stock", "Min"],
-                ...low.slice(0, 30).map((p: any) => [p.name, String(p.stock), String(p.min_stock_level)]),
+                ...low.slice(0, 30).map((p: any) => [p.name, `${p.stock_packs ?? 0} packs + ${p.stock_bottles ?? 0} bottles`, String(p.min_stock)]),
               ],
       },
       {
-        heading: `Top Debtors`,
+        heading: "Top Debtors",
         columnWidths: [320, 160],
         rows:
           !debtors || debtors.length === 0
             ? [["Customer", "Balance"], ["(none)", "-"]]
-            : [
-                ["Customer", "Balance"],
-                ...debtors.map((c: any) => [c.name, `NGN ${fmt(c.outstanding_balance)}`]),
-              ],
+            : [["Customer", "Balance"], ...debtors.map((c: any) => [c.name, `NGN ${fmt(c.outstanding_balance)}`])],
       },
     ],
-    footer: `${settings.business_name} • ${settings.business_address ?? ""} • ${settings.business_phone ?? ""}`,
+    footer: `${settings.business_name} | ${settings.business_address ?? ""} | ${settings.business_phone ?? ""}`,
   });
 
   const filename = `daily-summary-${start.toISOString().slice(0, 10)}.pdf`;
