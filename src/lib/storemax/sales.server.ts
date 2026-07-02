@@ -338,6 +338,32 @@ async function finalizeSale(
   const invoice = await nextInvoiceNo();
   const customerId: string | null = sData.customer_id ?? null;
 
+  const productIds = [...new Set(cart.map((c) => c.product_id))];
+  const { data: liveProducts } = await db
+    .from("products")
+    .select("id,name,current_stock,stock_packs,stock_bottles,pack_size,archived")
+    .in("id", productIds);
+  const live = new Map((liveProducts ?? []).map((p: any) => [String(p.id), { ...p }]));
+  for (const c of cart) {
+    const prod = live.get(c.product_id) as any;
+    if (!prod || prod.archived) {
+      await sendMessage(chatId, `❌ ${escapeHtml(c.name)} is no longer available. Please start the sale again.`, { reply_markup: BACK });
+      await saveSession(user.telegram_id, { state: null, data: {} });
+      return true;
+    }
+    const next = c.sale_unit === "pack"
+      ? { stock_packs: Number(prod.stock_packs ?? 0) - c.qty, stock_bottles: Number(prod.stock_bottles ?? 0) }
+      : calculateBottleSaleStock(prod, c.qty);
+    if (!next || next.stock_packs < 0 || next.stock_bottles < 0) {
+      await sendMessage(chatId, `❌ Not enough stock for <b>${escapeHtml(c.name)}</b>. Current: ${escapeHtml(stockLabel(prod))}. Please start the sale again.`, { reply_markup: BACK });
+      await saveSession(user.telegram_id, { state: null, data: {} });
+      return true;
+    }
+    prod.stock_packs = next.stock_packs;
+    prod.stock_bottles = next.stock_bottles;
+    prod.current_stock = next.stock_packs * Number(prod.pack_size ?? 1) + next.stock_bottles;
+  }
+
   const { data: sale, error: saleErr } = await db
     .from("sales")
     .insert({
