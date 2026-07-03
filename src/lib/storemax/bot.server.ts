@@ -17,6 +17,7 @@ import { openExpenses, handleExpenseCallback, handleExpenseMessage } from "./exp
 import { openReports, handleReportsCallback, openMyPerformance } from "./reports.server";
 import { openAI, handleAIMessage } from "./ai.server";
 import { openSettings, handleSettingsCallback, handleSettingsMessage } from "./settings.server";
+import { openTransactions, handleTransactionsCallback, handleTransactionsMessage } from "./transactions.server";
 import { buildDailySummaryPdf } from "./pdf.server";
 import { sendDocument } from "./telegram.server";
 
