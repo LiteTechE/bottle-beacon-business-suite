@@ -17,6 +17,7 @@ import { openExpenses, handleExpenseCallback, handleExpenseMessage } from "./exp
 import { openReports, handleReportsCallback, openMyPerformance } from "./reports.server";
 import { openAI, handleAIMessage } from "./ai.server";
 import { openSettings, handleSettingsCallback, handleSettingsMessage } from "./settings.server";
+import { openTransactions, handleTransactionsCallback, handleTransactionsMessage } from "./transactions.server";
 import { buildDailySummaryPdf } from "./pdf.server";
 import { sendDocument } from "./telegram.server";
 
@@ -59,16 +60,17 @@ function mainMenu(role: "owner" | "sales_rep"): ReplyMarkup {
         [{ text: "🛒 New Sale", callback_data: "menu:sale" }, { text: "📦 Inventory", callback_data: "menu:inventory" }],
         [{ text: "👥 Customers", callback_data: "menu:customers" }, { text: "🚚 Suppliers", callback_data: "menu:suppliers" }],
         [{ text: "💰 Expenses", callback_data: "menu:expenses" }, { text: "📊 Reports", callback_data: "menu:reports" }],
-        [{ text: "🧑‍💼 Staff", callback_data: "menu:staff" }, { text: "⚙️ Settings", callback_data: "menu:settings" }],
-        [{ text: "🤖 Ask Assistant", callback_data: "menu:ai" }, { text: "🔒 Logout", callback_data: "auth:logout" }],
+        [{ text: "🧾 Transactions", callback_data: "menu:txn" }, { text: "🧑‍💼 Staff", callback_data: "menu:staff" }],
+        [{ text: "⚙️ Settings", callback_data: "menu:settings" }, { text: "🤖 Ask Assistant", callback_data: "menu:ai" }],
+        [{ text: "🔒 Logout", callback_data: "auth:logout" }],
       ],
     };
   }
   return {
     inline_keyboard: [
       [{ text: "🛒 New Sale", callback_data: "menu:sale" }, { text: "🔎 Search Product", callback_data: "menu:search" }],
-      [{ text: "📋 My Performance", callback_data: "menu:mysales" }, { text: "👥 Customers", callback_data: "menu:customers" }],
-      [{ text: "🔒 Logout", callback_data: "auth:logout" }],
+      [{ text: "📋 My Performance", callback_data: "menu:mysales" }, { text: "🧾 My Transactions", callback_data: "menu:txn" }],
+      [{ text: "👥 Customers", callback_data: "menu:customers" }, { text: "🔒 Logout", callback_data: "auth:logout" }],
     ],
   };
 }
@@ -342,6 +344,7 @@ async function handleMessage(msg: { message_id: number; chat: { id: number }; fr
 
   // Delegate to module message handlers based on session state
   const botUser = { id: user.id, telegram_id: tg.id, role: user.role, full_name: user.full_name };
+  if (await handleTransactionsMessage(text, chatId, botUser)) return;
   if (await handleSaleMessage(text, chatId, botUser)) return;
   if (await handleInventoryMessage(text, chatId, botUser)) return;
   if (await handleCustomerMessage(text, chatId, botUser)) return;
@@ -419,9 +422,18 @@ async function handleCallback(cb: TgCallback) {
     await answerCallbackQuery(cb.id);
     return;
   }
+  if (await handleTransactionsCallback(data, chatId, botUser)) {
+    await answerCallbackQuery(cb.id);
+    return;
+  }
   if (data === "menu:settings") {
     await answerCallbackQuery(cb.id);
     await openSettings(chatId, botUser);
+    return;
+  }
+  if (data === "menu:txn") {
+    await answerCallbackQuery(cb.id);
+    await openTransactions(chatId, botUser);
     return;
   }
 
