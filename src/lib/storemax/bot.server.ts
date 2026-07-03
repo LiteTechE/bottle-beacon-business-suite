@@ -60,16 +60,17 @@ function mainMenu(role: "owner" | "sales_rep"): ReplyMarkup {
         [{ text: "🛒 New Sale", callback_data: "menu:sale" }, { text: "📦 Inventory", callback_data: "menu:inventory" }],
         [{ text: "👥 Customers", callback_data: "menu:customers" }, { text: "🚚 Suppliers", callback_data: "menu:suppliers" }],
         [{ text: "💰 Expenses", callback_data: "menu:expenses" }, { text: "📊 Reports", callback_data: "menu:reports" }],
-        [{ text: "🧑‍💼 Staff", callback_data: "menu:staff" }, { text: "⚙️ Settings", callback_data: "menu:settings" }],
-        [{ text: "🤖 Ask Assistant", callback_data: "menu:ai" }, { text: "🔒 Logout", callback_data: "auth:logout" }],
+        [{ text: "🧾 Transactions", callback_data: "menu:txn" }, { text: "🧑‍💼 Staff", callback_data: "menu:staff" }],
+        [{ text: "⚙️ Settings", callback_data: "menu:settings" }, { text: "🤖 Ask Assistant", callback_data: "menu:ai" }],
+        [{ text: "🔒 Logout", callback_data: "auth:logout" }],
       ],
     };
   }
   return {
     inline_keyboard: [
       [{ text: "🛒 New Sale", callback_data: "menu:sale" }, { text: "🔎 Search Product", callback_data: "menu:search" }],
-      [{ text: "📋 My Performance", callback_data: "menu:mysales" }, { text: "👥 Customers", callback_data: "menu:customers" }],
-      [{ text: "🔒 Logout", callback_data: "auth:logout" }],
+      [{ text: "📋 My Performance", callback_data: "menu:mysales" }, { text: "🧾 My Transactions", callback_data: "menu:txn" }],
+      [{ text: "👥 Customers", callback_data: "menu:customers" }, { text: "🔒 Logout", callback_data: "auth:logout" }],
     ],
   };
 }
