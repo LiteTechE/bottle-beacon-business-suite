@@ -344,6 +344,7 @@ async function handleMessage(msg: { message_id: number; chat: { id: number }; fr
 
   // Delegate to module message handlers based on session state
   const botUser = { id: user.id, telegram_id: tg.id, role: user.role, full_name: user.full_name };
+  if (await handleTransactionsMessage(text, chatId, botUser)) return;
   if (await handleSaleMessage(text, chatId, botUser)) return;
   if (await handleInventoryMessage(text, chatId, botUser)) return;
   if (await handleCustomerMessage(text, chatId, botUser)) return;
