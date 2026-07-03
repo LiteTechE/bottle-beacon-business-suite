@@ -422,9 +422,18 @@ async function handleCallback(cb: TgCallback) {
     await answerCallbackQuery(cb.id);
     return;
   }
+  if (await handleTransactionsCallback(data, chatId, botUser)) {
+    await answerCallbackQuery(cb.id);
+    return;
+  }
   if (data === "menu:settings") {
     await answerCallbackQuery(cb.id);
     await openSettings(chatId, botUser);
+    return;
+  }
+  if (data === "menu:txn") {
+    await answerCallbackQuery(cb.id);
+    await openTransactions(chatId, botUser);
     return;
   }
 
