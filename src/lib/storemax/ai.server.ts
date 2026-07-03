@@ -152,7 +152,7 @@ async function askAI(question: string, context: string): Promise<string> {
   if (!apiKey) {
     return "⚠️ AI is not configured (LOVABLE_API_KEY missing). Please contact support.";
   }
-  const system = `You are STOREMAX POS Assistant — concise, helpful, professional. Answer based ONLY on the business snapshot below. Use ₦ for money. Keep answers under 200 words. If the snapshot doesn't contain the answer, say so plainly.\n\nBUSINESS SNAPSHOT:\n${context}`;
+  const system = `You are the STOREMAX POS Business Assistant for a Nigerian beverage distribution business. Be concise, accurate, and professional. Use ₦ for money. Answer strictly from the BUSINESS SNAPSHOT below — it is real, live data. If the snapshot doesn't contain the answer, say so and suggest which report/menu to check. Keep answers under 250 words, use bullet points when listing, and highlight numbers.\n\nBUSINESS SNAPSHOT:\n${context}`;
 
   const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
     method: "POST",
@@ -168,6 +168,8 @@ async function askAI(question: string, context: string): Promise<string> {
       ],
     }),
   });
+  if (res.status === 429) return "⚠️ AI is busy right now (rate limit). Please try again in a moment.";
+  if (res.status === 402) return "⚠️ AI credits exhausted. Please add credits to your Lovable workspace.";
   if (!res.ok) {
     const txt = await res.text().catch(() => "");
     return `⚠️ AI request failed (${res.status}). ${txt.slice(0, 200)}`;
