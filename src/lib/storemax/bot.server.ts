@@ -77,14 +77,31 @@ function mainMenu(role: "owner" | "sales_rep"): ReplyMarkup {
 
 async function getOrCreateUser(tg: TgUser) {
   const db = getServiceClient();
-  const { data: existing } = await db.from("bot_users").select("*").eq("telegram_id", tg.id).maybeSingle();
+  const { data: existing, error: lookupError } = await db
+    .from("bot_users")
+    .select("*")
+    .eq("telegram_id", tg.id)
+    .maybeSingle();
+  if (lookupError) {
+    console.error("[storemax] account lookup failed", {
+      code: lookupError.code,
+      message: lookupError.message,
+      details: lookupError.details,
+      hint: lookupError.hint,
+    });
+    return { user: null, created: false };
+  }
   if (existing) return { user: existing, created: false };
 
   // First user in the system becomes the owner.
-  const { count } = await db.from("bot_users").select("*", { count: "exact", head: true });
+  const { count, error: countError } = await db.from("bot_users").select("*", { count: "exact", head: true });
+  if (countError || count === null) {
+    console.error("[storemax] account registration count failed", countError ?? new Error("Missing account count"));
+    return { user: null, created: false };
+  }
   const role = (count ?? 0) === 0 ? "owner" : "sales_rep";
 
-  const { data: inserted } = await db
+  const { data: inserted, error: insertError } = await db
     .from("bot_users")
     .insert({
       telegram_id: tg.id,
@@ -96,8 +113,40 @@ async function getOrCreateUser(tg: TgUser) {
     .select("*")
     .single();
 
+  if (insertError) {
+    console.error("[storemax] account registration insert failed", {
+      code: insertError.code,
+      message: insertError.message,
+      details: insertError.details,
+      hint: insertError.hint,
+    });
+    // Telegram may deliver the same update more than once, or a retry may
+    // overlap the first insert. Re-read the account before reporting failure.
+    const { data: recovered, error: recoveryError } = await db
+      .from("bot_users")
+      .select("*")
+      .eq("telegram_id", tg.id)
+      .maybeSingle();
+    if (recoveryError) {
+      console.error("[storemax] account registration recovery lookup failed", {
+        code: recoveryError.code,
+        message: recoveryError.message,
+      });
+    }
+    if (recovered) return { user: recovered, created: false };
+    return { user: null, created: false };
+  }
+
   if (role === "owner") {
-    await db.from("settings").upsert({ key: "owner_telegram_id", value: tg.id }, { onConflict: "key" });
+    const { error: settingsError } = await db
+      .from("settings")
+      .upsert({ key: "owner_telegram_id", value: tg.id }, { onConflict: "key" });
+    if (settingsError) {
+      console.error("[storemax] owner registration setting failed", {
+        code: settingsError.code,
+        message: settingsError.message,
+      });
+    }
   }
   return { user: inserted, created: true };
 }
