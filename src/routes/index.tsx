@@ -11,6 +11,8 @@ export const Route = createFileRoute("/")({
       },
       { property: "og:title", content: "STOREMAX POS" },
       { property: "og:description", content: "Telegram-powered Point of Sale and Inventory Management." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
     ],
   }),
   component: Landing,
