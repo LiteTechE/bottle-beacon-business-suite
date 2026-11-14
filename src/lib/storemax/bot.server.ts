@@ -32,6 +32,7 @@ interface TgMessage {
   chat: { id: number };
   from?: TgUser;
   text?: string;
+  web_app_data?: { data: string; button_text?: string };
 }
 interface TgCallback {
   id: string;
@@ -155,6 +156,30 @@ export async function handleUpdate(update: TgUpdate): Promise<void> {
   const msg = update.message ?? update.edited_message;
   if (msg && msg.from && msg.text) {
     await handleMessage(msg as Required<TgMessage>);
+    return;
+  }
+  if (msg?.from && typeof msg.web_app_data?.data === "string") {
+    let barcode = "";
+    try {
+      const payload: unknown = JSON.parse(msg.web_app_data.data);
+      if (
+        payload &&
+        typeof payload === "object" &&
+        "type" in payload &&
+        payload.type === "storemax_scan" &&
+        "barcode" in payload &&
+        typeof payload.barcode === "string"
+      ) {
+        barcode = payload.barcode.trim();
+      }
+    } catch {
+      // Ignore malformed Mini App messages; they cannot be used as a sale item.
+    }
+    if (barcode.length > 0 && barcode.length <= 128) {
+      await handleMessage({ ...msg, from: msg.from, text: barcode });
+    } else {
+      await sendMessage(msg.chat.id, "I couldn't read that barcode. Scan again or type the code manually.");
+    }
     return;
   }
   if (update.callback_query) {
