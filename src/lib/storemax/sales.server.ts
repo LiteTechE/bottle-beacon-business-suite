@@ -24,6 +24,15 @@ interface CartItem {
 }
 
 const BACK: ReplyMarkup = { inline_keyboard: [[{ text: "⬅️ Back to Menu", callback_data: "menu:main" }]] };
+const SCAN_URL = "https://bottle-beacon-business-suite.lovable.app/scan";
+
+function saleSearchKeyboard(): ReplyMarkup {
+  return {
+    keyboard: [[{ text: "📷 Scan Item", web_app: { url: SCAN_URL } }], [{ text: "❌ Cancel Sale" }]],
+    resize_keyboard: true,
+    input_field_placeholder: "Scan a barcode or type a product",
+  };
+}
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -95,8 +104,32 @@ export async function openSale(chatId: number, user: BotUser) {
   });
   await sendMessage(
     chatId,
-    "🛒 <b>New Sale</b>\n\nSend a product <b>name</b>, <b>SKU</b>, or <b>barcode</b> to add it to the cart.",
-    { reply_markup: { inline_keyboard: [[{ text: "❌ Cancel Sale", callback_data: "sale:cancel" }]] } },
+    "🛒 <b>New Sale</b>\n\nScan an item or send its <b>name</b>, <b>SKU</b>, or <b>barcode</b> to add it to the cart.",
+    { reply_markup: saleSearchKeyboard() },
+  );
+}
+
+async function promptSaleUnit(
+  chatId: number,
+  telegramId: number,
+  sessionData: Record<string, any>,
+  product: any,
+) {
+  await saveSession(telegramId, {
+    state: "sale:unit",
+    data: { ...sessionData, pending: product },
+  });
+  await sendMessage(
+    chatId,
+    `<b>${escapeHtml(product.name)}</b>\nStock: ${escapeHtml(stockLabel(product))}\nPack: ₦${fmtMoney(product.pack_selling_price)} • Bottle: ₦${fmtMoney(product.bottle_selling_price ?? product.selling_price)}\n\nChoose how you are selling it:`,
+    {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "📦 Sell Packs", callback_data: "sale:unit:pack" }, { text: "🍾 Sell Bottles", callback_data: "sale:unit:bottle" }],
+          [{ text: "❌ Cancel Sale", callback_data: "sale:cancel" }],
+        ],
+      },
+    },
   );
 }
 
@@ -124,18 +157,7 @@ export async function handleSaleCallback(data: string, chatId: number, user: Bot
       await sendMessage(chatId, "Product not found.");
       return true;
     }
-    await saveSession(user.telegram_id, {
-      state: "sale:unit",
-      data: { ...sData, pending: prod },
-    });
-    await sendMessage(
-      chatId,
-      `<b>${escapeHtml(prod.name)}</b>\nStock: ${escapeHtml(stockLabel(prod))}\nPack: ₦${fmtMoney((prod as any).pack_selling_price)} • Bottle: ₦${fmtMoney((prod as any).bottle_selling_price ?? (prod as any).selling_price)}\n\nChoose how you are selling it:`,
-      { reply_markup: { inline_keyboard: [
-        [{ text: "📦 Sell Packs", callback_data: "sale:unit:pack" }, { text: "🍾 Sell Bottles", callback_data: "sale:unit:bottle" }],
-        [{ text: "❌ Cancel Sale", callback_data: "sale:cancel" }],
-      ] } },
-    );
+    await promptSaleUnit(chatId, user.telegram_id, sData, prod);
     return true;
   }
 
@@ -156,7 +178,7 @@ export async function handleSaleCallback(data: string, chatId: number, user: Bot
 
   if (data === "sale:more") {
     await saveSession(user.telegram_id, { state: "sale:search", data: sData });
-    await sendMessage(chatId, "Send another product name, SKU, or barcode.");
+    await sendMessage(chatId, "Scan or send another product name, SKU, or barcode.", { reply_markup: saleSearchKeyboard() });
     return true;
   }
 
@@ -219,15 +241,38 @@ export async function handleSaleMessage(text: string, chatId: number, user: BotU
 
   if (state === "sale:search") {
     const q = text.trim();
-    const { data: rows } = await db
+    if (q === "❌ Cancel Sale") {
+      await saveSession(user.telegram_id, { state: null, data: {} });
+      await sendMessage(chatId, "❌ Sale cancelled.", { reply_markup: { remove_keyboard: true } });
+      return true;
+    }
+
+    const { data: exactMatches } = await db
       .from("products")
       .select("id,name,sku,current_stock,stock_packs,stock_bottles,pack_size,pack_selling_price,bottle_selling_price,pack_cost_price,bottle_cost_price,selling_price,cost_price")
+      .eq("barcode", q)
       .eq("archived", false)
       .gt("current_stock", 0)
-      .or(`name.ilike.%${q}%,sku.ilike.%${q}%,barcode.eq.${q}`)
-      .limit(6);
+      .limit(2);
+
+    if (exactMatches?.length === 1) {
+      await promptSaleUnit(chatId, user.telegram_id, sData, exactMatches[0]);
+      return true;
+    }
+    if ((exactMatches?.length ?? 0) > 1) {
+      await sendMessage(chatId, "This barcode is assigned to more than one product. Search by product name or SKU instead.", { reply_markup: saleSearchKeyboard() });
+      return true;
+    }
+
+    const search = q.slice(0, 80);
+    const productFields = "id,name,sku,current_stock,stock_packs,stock_bottles,pack_size,pack_selling_price,bottle_selling_price,pack_cost_price,bottle_cost_price,selling_price,cost_price";
+    const [nameResult, skuResult] = await Promise.all([
+      db.from("products").select(productFields).eq("archived", false).gt("current_stock", 0).ilike("name", `%${search}%`).limit(6),
+      db.from("products").select(productFields).eq("archived", false).gt("current_stock", 0).ilike("sku", `%${search}%`).limit(6),
+    ]);
+    const rows = [...new Map([...(nameResult.data ?? []), ...(skuResult.data ?? [])].map((product: any) => [product.id, product])).values()].slice(0, 6);
     if (!rows || rows.length === 0) {
-      await sendMessage(chatId, `No in-stock product matches “${escapeHtml(q)}”. Try again.`);
+      await sendMessage(chatId, `No in-stock product matches “${escapeHtml(q)}”. Try again.`, { reply_markup: saleSearchKeyboard() });
       return true;
     }
     const lines = rows.map(
@@ -236,7 +281,9 @@ export async function handleSaleMessage(text: string, chatId: number, user: BotU
     );
     const buttons = rows.map((p: any) => [{ text: `${p.name} — ₦${fmtMoney(p.selling_price)}`.slice(0, 60), callback_data: `sale:pick:${p.id}` }]);
     buttons.push([{ text: "❌ Cancel Sale", callback_data: "sale:cancel" }]);
-    await sendMessage(chatId, `🔎 Pick a product:\n\n${lines.join("\n")}`, { reply_markup: { inline_keyboard: buttons } });
+    await sendMessage(chatId, `🔎 Pick a product:\n\n${lines.join("\n")}`, {
+      reply_markup: { inline_keyboard: buttons },
+    });
     return true;
   }
 

@@ -15,7 +15,16 @@ function authHeaders(): Record<string, string> {
 }
 
 export type InlineKeyboardButton = { text: string; callback_data?: string; url?: string };
-export type ReplyMarkup = { inline_keyboard: InlineKeyboardButton[][] };
+export type ReplyKeyboardButton = { text: string; web_app?: { url: string } };
+export type ReplyMarkup =
+  | { inline_keyboard: InlineKeyboardButton[][] }
+  | {
+      keyboard: ReplyKeyboardButton[][];
+      resize_keyboard?: boolean;
+      one_time_keyboard?: boolean;
+      input_field_placeholder?: string;
+    }
+  | { remove_keyboard: boolean };
 
 export async function tgCall<T = unknown>(method: string, payload: Record<string, unknown>): Promise<T> {
   const res = await fetch(`${GATEWAY}/${method}`, {

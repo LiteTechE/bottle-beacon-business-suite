@@ -1,5 +1,5 @@
 - [x] Resume hosted backend and diagnose account registration failures.
 - [x] Add registration-step diagnostics and recover from overlapping first-time signups.
-- [ ] Confirm the repaired app release is published and the Telegram bot uses the live receiver.
-- [ ] Connect iPhone Safari camera barcode scanning to the new-sale item flow, retaining manual lookup fallback.
-- [ ] Verify scan-result matching, sale handoff, and mobile layout.
+- [ ] Publish the repaired scanner and confirm the Telegram bot receiver is live.
+- [ ] Connect iPhone Safari camera scanning to New Sale, with manual product lookup fallback.
+- [ ] Verify barcode matching, Telegram sale handoff, and iPhone-sized layout.
