@@ -20,7 +20,6 @@ import { openSettings, handleSettingsCallback, handleSettingsMessage } from "./s
 import { openTransactions, handleTransactionsCallback, handleTransactionsMessage } from "./transactions.server";
 import { buildDailySummaryPdf } from "./pdf.server";
 import { sendDocument } from "./telegram.server";
-import { isSaleSearchSession, parseStoremaxScanData } from "./scanner";
 
 interface TgUser {
   id: number;
@@ -50,6 +49,27 @@ export interface TgUpdate {
 
 const MAX_FAILED = 5;
 const LOCK_MINUTES = 15;
+
+function parseStoremaxScanData(raw: string): string | null {
+  try {
+    const payload: unknown = JSON.parse(raw);
+    if (!payload || typeof payload !== "object" || !("type" in payload) || !("barcode" in payload)) return null;
+    if (payload.type !== "storemax_scan" || typeof payload.barcode !== "string") return null;
+    const barcode = payload.barcode.trim();
+    return barcode.length > 0 && barcode.length <= 128 && /^[\x21-\x7E]+$/.test(barcode) ? barcode : null;
+  } catch {
+    return null;
+  }
+}
+
+function isSaleSearchSession(
+  session: Awaited<ReturnType<typeof loadSession>>,
+  userId: string,
+): boolean {
+  return Boolean(
+    session?.authenticated && session.user_id === userId && session.state === "sale:search",
+  );
+}
 
 function fullName(u: TgUser): string {
   return [u.first_name, u.last_name].filter(Boolean).join(" ") || u.username || `User ${u.id}`;
