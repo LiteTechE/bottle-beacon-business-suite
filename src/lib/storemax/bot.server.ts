@@ -20,6 +20,7 @@ import { openSettings, handleSettingsCallback, handleSettingsMessage } from "./s
 import { openTransactions, handleTransactionsCallback, handleTransactionsMessage } from "./transactions.server";
 import { buildDailySummaryPdf } from "./pdf.server";
 import { sendDocument } from "./telegram.server";
+import { isSaleSearchSession, parseStoremaxScanData } from "./scanner";
 
 interface TgUser {
   id: number;
@@ -154,32 +155,47 @@ async function getOrCreateUser(tg: TgUser) {
 
 export async function handleUpdate(update: TgUpdate): Promise<void> {
   const msg = update.message ?? update.edited_message;
-  if (msg && msg.from && msg.text) {
-    await handleMessage(msg as Required<TgMessage>);
+  if (update.message?.from && typeof update.message.web_app_data?.data === "string") {
+    const barcode = parseStoremaxScanData(update.message.web_app_data.data);
+    if (!barcode) {
+      await sendMessage(update.message.chat.id, "I couldn't read that barcode. Scan again or type the code manually.");
+      return;
+    }
+
+    const tg = update.message.from;
+    const chatId = update.message.chat.id;
+    const db = getServiceClient();
+    const { data: user } = await db
+      .from("bot_users")
+      .select("id,telegram_id,role,full_name,is_active")
+      .eq("telegram_id", tg.id)
+      .maybeSingle();
+
+    if (!user || !user.is_active) {
+      await sendMessage(chatId, user ? "Your account is awaiting owner approval." : "Please send /start to set up your account.");
+      return;
+    }
+
+    const session = await loadSession(tg.id);
+    if (!isSaleSearchSession(session, user.id)) {
+      await sendMessage(chatId, "Open New Sale first, then scan the item again.");
+      return;
+    }
+
+    const botUser = { id: user.id, telegram_id: user.telegram_id, role: user.role, full_name: user.full_name };
+    await logActivity({
+      user_id: user.id,
+      telegram_id: tg.id,
+      action: "barcode_scan",
+      meta: { barcode },
+    });
+    const handled = await handleSaleMessage(barcode, chatId, botUser);
+    if (!handled) await sendMessage(chatId, "Open New Sale first, then scan the item again.");
     return;
   }
-  if (msg?.from && typeof msg.web_app_data?.data === "string") {
-    let barcode = "";
-    try {
-      const payload: unknown = JSON.parse(msg.web_app_data.data);
-      if (
-        payload &&
-        typeof payload === "object" &&
-        "type" in payload &&
-        payload.type === "storemax_scan" &&
-        "barcode" in payload &&
-        typeof payload.barcode === "string"
-      ) {
-        barcode = payload.barcode.trim();
-      }
-    } catch {
-      // Ignore malformed Mini App messages; they cannot be used as a sale item.
-    }
-    if (barcode.length > 0 && barcode.length <= 128) {
-      await handleMessage({ ...msg, from: msg.from, text: barcode });
-    } else {
-      await sendMessage(msg.chat.id, "I couldn't read that barcode. Scan again or type the code manually.");
-    }
+
+  if (msg && msg.from && msg.text) {
+    await handleMessage(msg as Required<TgMessage>);
     return;
   }
   if (update.callback_query) {
