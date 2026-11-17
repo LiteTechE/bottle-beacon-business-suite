@@ -3,3 +3,4 @@
 - [ ] Publish the repaired scanner and confirm the Telegram bot receiver is live.
 - [ ] Connect iPhone Safari camera scanning to New Sale, with manual product lookup fallback.
 - [ ] Verify barcode matching, Telegram sale handoff, and iPhone-sized layout.
+- [ ] Build and publish an integrated STOREMAX web app for sales, inventory, staff, reports, and settings.
